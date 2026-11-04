@@ -1,10 +1,7 @@
 package nl.wapnet.teamswrapper;
 
 import android.app.Activity;
-import android.graphics.Insets;
-import android.os.Build;
 import android.os.Bundle;
-import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -20,19 +17,6 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
 
         webView = new WebView(this);
-        webView.setOnApplyWindowInsetsListener((view, insets) -> {
-            if (Build.VERSION.SDK_INT >= 30) {
-                Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-            } else {
-                view.setPadding(
-                        insets.getSystemWindowInsetLeft(),
-                        insets.getSystemWindowInsetTop(),
-                        insets.getSystemWindowInsetRight(),
-                        insets.getSystemWindowInsetBottom());
-            }
-            return insets;
-        });
         setContentView(webView);
 
         WebSettings settings = webView.getSettings();

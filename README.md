@@ -45,4 +45,4 @@ The current release build uses Android's debug signing key and is intended for s
 
 ## Status
 
-This is an experimental wrapper. Microsoft can change Teams Web or its browser checks at any time. The current Android system-bar alignment still needs device-specific investigation.
+This is an experimental wrapper. Microsoft can change Teams Web or its browser checks at any time.
