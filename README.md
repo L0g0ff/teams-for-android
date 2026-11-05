@@ -41,7 +41,7 @@ The APK is written to:
 app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-Local release builds are unsigned. Version tags create signed GitHub Releases whose APKs use the project's stable release certificate.
+Local release builds are unsigned. Each merge to `main` creates a signed GitHub Release with an increasing Android version code.
 
 ## Status
 
