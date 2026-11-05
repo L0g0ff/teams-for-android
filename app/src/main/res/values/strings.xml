@@ -2,4 +2,5 @@
 <resources>
     <string name="media_settings_unavailable">Open Android Settings, then Apps, Teams, Permissions to allow the camera and microphone.</string>
     <string name="media_denied">Camera/microphone blocked by Teams for Android: %1$s</string>
+    <string name="notification_channel">Teams messages</string>
 </resources>
