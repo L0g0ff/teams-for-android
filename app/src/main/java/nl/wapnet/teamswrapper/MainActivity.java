@@ -29,6 +29,7 @@ public final class MainActivity extends Activity {
     private static final String TEAMS_URL = "https://teams.cloud.microsoft/";
     private static final int MEDIA_PERMISSION_REQUEST = 1;
     private WebView webView;
+    private Notifications notifications;
     // Android WebView always answers permissions.query with "prompt" for camera/microphone, because
     // the embedding app decides per request. Teams reads that as "blocked by the browser" and never
     // calls getUserMedia. Report "granted" instead; the real decision still happens in
@@ -66,7 +67,14 @@ public final class MainActivity extends Activity {
         cookies.setAcceptThirdPartyCookies(webView, true);
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            WebViewCompat.addDocumentStartJavaScript(webView, MEDIA_PERMISSION_STATE_FIX, OriginPolicy.mediaOrigins());
+            WebViewCompat.addDocumentStartJavaScript(webView, MEDIA_PERMISSION_STATE_FIX, OriginPolicy.teamsOrigins());
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+                notifications = new Notifications(this);
+                // Origin-restricted by WebView itself: other sites never see the bridge object.
+                WebViewCompat.addWebMessageListener(webView, Notifications.BRIDGE, OriginPolicy.teamsOrigins(),
+                        (view, message, origin, isMainFrame, reply) -> notifications.show(message.getData(), reply));
+                WebViewCompat.addDocumentStartJavaScript(webView, Notifications.shim(this), OriginPolicy.teamsOrigins());
+            }
         }
 
         webView.setWebViewClient(new WebViewClient() {
@@ -92,6 +100,22 @@ public final class MainActivity extends Activity {
             }
         });
         webView.loadUrl(TEAMS_URL);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (notifications != null) {
+            notifications.clicked(intent);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (notifications != null) {
+            notifications.clearAll();
+        }
     }
 
     private void handleMediaRequest(PermissionRequest request) {

@@ -23,8 +23,8 @@ final class OriginPolicy {
         }
     }
 
-    /** Origin rules for scripts that must only run on Teams' media origins. */
-    static Set<String> mediaOrigins() {
+    /** Origin rules for scripts and bridges that must only run on Teams origins. */
+    static Set<String> teamsOrigins() {
         Set<String> origins = new java.util.HashSet<>();
         for (String host : MEDIA_HOSTS) {
             origins.add("https://" + host);
@@ -56,7 +56,7 @@ final class OriginPolicy {
         assert !isMediaSettingsLink("ms-settings:network");
         assert isWindowsSettingsLink("ms-settings:network");
         assert !isWindowsSettingsLink("https://teams.cloud.microsoft/");
-        for (String origin : mediaOrigins()) {
+        for (String origin : teamsOrigins()) {
             assert mayCapture(origin);
         }
     }

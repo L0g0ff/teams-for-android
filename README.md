@@ -27,8 +27,9 @@ The launcher icon adapts the visual composition of the Teams for Linux icon, rep
 - Android touch and pinch zoom
 - Linux desktop User-Agent using the installed Chromium/WebView version
 - Camera and microphone for Teams calls, granted only to Teams origins after Android asks for permission
+- Android notifications for Teams Web notifications while the app runs in the background; tapping one opens the chat
 
-Not implemented: Android push notifications, calls in the background, screen sharing, background services, or file-picker integration.
+Not implemented: notifications after Android stops the app (Teams Web push needs a browser push service that WebView lacks), calls in the background, screen sharing, background services, or file-picker integration.
 
 ## Build
 
