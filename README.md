@@ -16,6 +16,10 @@ This project was inspired by [Teams for Linux](https://github.com/IsmaelMartinez
 
 Microsoft Teams itself is proprietary software served by Microsoft and is not included in this repository.
 
+## Artwork
+
+The launcher icon adapts the visual composition of the Teams for Linux icon, replacing Tux with an original Android-inspired robot. Teams for Linux credits its icon source to Icon Duck under CC BY 4.0. See [NOTICE.md](NOTICE.md) for attribution.
+
 ## Current scope
 
 - Teams Web sign-in and chat
