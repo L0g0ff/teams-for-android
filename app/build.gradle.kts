@@ -18,6 +18,8 @@ android {
         // ponytail: supports 100,000 total CI runs before version-code ranges overlap.
         versionCode = ciBuildNumber?.let { baseVersionCode * 100_000 + it } ?: baseVersionCode
         versionName = ciBuildNumber?.let { "$baseVersionName+build.$it" } ?: baseVersionName
+        // PR test builds only: allow chrome://inspect over USB to diagnose Teams in the WebView.
+        resValue("bool", "webview_debugging", (System.getenv("GITHUB_EVENT_NAME") == "pull_request").toString())
     }
 
     signingConfigs {
@@ -37,6 +39,10 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
         }
+    }
+
+    buildFeatures {
+        resValues = true
     }
 
     compileOptions {

@@ -32,6 +32,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
 
+        WebView.setWebContentsDebuggingEnabled(getResources().getBoolean(R.bool.webview_debugging));
         webView = new WebView(this);
         setContentView(webView);
 
