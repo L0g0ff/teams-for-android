@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
 }
 
+val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
+
 android {
     namespace = "nl.wapnet.teamswrapper"
     compileSdk = 37
@@ -14,11 +16,22 @@ android {
         versionName = "0.1.2"
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

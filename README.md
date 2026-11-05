@@ -38,10 +38,10 @@ export ANDROID_HOME=/path/to/android-sdk
 The APK is written to:
 
 ```text
-app/build/outputs/apk/release/app-release.apk
+app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-The current release build uses Android's debug signing key and is intended for sideloading and testing, not store distribution.
+Local release builds are unsigned. Version tags create signed GitHub Releases whose APKs use the project's stable release certificate.
 
 ## Status
 
