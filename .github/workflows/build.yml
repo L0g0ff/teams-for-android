@@ -21,7 +21,10 @@ jobs:
       - run: ./gradlew lintDebug assembleRelease
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Same-repo PRs get a signed pre-release for device testing; fork PRs have no secrets.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event.pull_request.head.repo.full_name == github.repository
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -49,10 +52,23 @@ jobs:
           aapt=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
           version=$("$aapt" dump badging app/build/outputs/apk/release/app-release.apk | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p")
           test -n "$version"
-          tag="v$version"
+          if [ -n "$PR_NUMBER" ]; then
+            # One rolling pre-release per PR, never marked Latest.
+            tag="pr-$PR_NUMBER"
+            gh release delete "$tag" --yes --cleanup-tag || true
+            flags=(--prerelease --latest=false --title "PR #$PR_NUMBER test build ($version)"
+                   --notes "Signed test build of #$PR_NUMBER at $PR_HEAD_SHA. Installs over the regular app.")
+            target="$PR_HEAD_SHA"
+          else
+            tag="v$version"
+            flags=(--generate-notes)
+            target="$GITHUB_SHA"
+          fi
           apk="teams-for-android-$tag.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
           sha256sum "$apk" > "$apk.sha256"
-          gh release create "$tag" "$apk" "$apk.sha256" --target "$GITHUB_SHA" --generate-notes
+          gh release create "$tag" "$apk" "$apk.sha256" --target "$target" "${flags[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}

@@ -18,6 +18,8 @@ android {
         // ponytail: supports 100,000 total CI runs before version-code ranges overlap.
         versionCode = ciBuildNumber?.let { baseVersionCode * 100_000 + it } ?: baseVersionCode
         versionName = ciBuildNumber?.let { "$baseVersionName+build.$it" } ?: baseVersionName
+        // PR test builds only: allow chrome://inspect over USB to diagnose Teams in the WebView.
+        resValue("bool", "webview_debugging", (System.getenv("GITHUB_EVENT_NAME") == "pull_request").toString())
     }
 
     signingConfigs {
@@ -39,8 +41,17 @@ android {
         }
     }
 
+    buildFeatures {
+        resValues = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+}
+
+dependencies {
+    // Document-start scripts (WebViewCompat.addDocumentStartJavaScript); no framework WebView equivalent.
+    implementation("androidx.webkit:webkit:1.15.0")
 }
