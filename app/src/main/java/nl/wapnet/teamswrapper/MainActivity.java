@@ -20,6 +20,8 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,6 +29,14 @@ public final class MainActivity extends Activity {
     private static final String TEAMS_URL = "https://teams.cloud.microsoft/";
     private static final int MEDIA_PERMISSION_REQUEST = 1;
     private WebView webView;
+    // Android WebView always answers permissions.query with "prompt" for camera/microphone, because
+    // the embedding app decides per request. Teams reads that as "blocked by the browser" and never
+    // calls getUserMedia. Report "granted" instead; the real decision still happens in
+    // onPermissionRequest and the Android runtime dialog.
+    private static final String MEDIA_PERMISSION_STATE_FIX = "(()=>{const p=navigator.permissions;"
+            + "if(!p||!p.query)return;const q=p.query.bind(p);"
+            + "p.query=d=>q(d).then(s=>{if(d&&(d.name==='camera'||d.name==='microphone')&&s.state==='prompt')"
+            + "Object.defineProperty(s,'state',{value:'granted'});return s})})()";
     private static final String[] MEDIA_PERMISSIONS =
             {Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO};
     // Teams fires audio and video requests concurrently; all wait on one Android dialog.
@@ -54,6 +64,10 @@ public final class MainActivity extends Activity {
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(webView, true);
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(webView, MEDIA_PERMISSION_STATE_FIX, OriginPolicy.mediaOrigins());
+        }
 
         webView.setWebViewClient(new WebViewClient() {
             @Override

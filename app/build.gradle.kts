@@ -50,3 +50,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 }
+
+dependencies {
+    // Document-start scripts (WebViewCompat.addDocumentStartJavaScript); no framework WebView equivalent.
+    implementation("androidx.webkit:webkit:1.15.0")
+}
