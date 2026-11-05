@@ -30,13 +30,23 @@ final class Notifications {
     private final Activity activity;
     private final NotificationManager manager;
     private JavaScriptReplyProxy page;
-    private boolean askedPermission;
 
     Notifications(Activity activity) {
         this.activity = activity;
         manager = activity.getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel(
                 CHANNEL, activity.getString(R.string.notification_channel), NotificationManager.IMPORTANCE_HIGH));
+        // Ask at startup, while the app is on screen: the first message usually arrives in the
+        // background, where the dialog cannot appear and that message would be lost.
+        // Android itself stops showing the dialog after the user denies it twice.
+        if (!allowed()) {
+            activity.requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, PERMISSION_REQUEST);
+        }
+    }
+
+    private boolean allowed() {
+        return Build.VERSION.SDK_INT < 33
+                || activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
     static String shim(Activity activity) {
@@ -50,12 +60,7 @@ final class Notifications {
 
     void show(String json, JavaScriptReplyProxy reply) {
         page = reply;
-        if (Build.VERSION.SDK_INT >= 33
-                && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            if (!askedPermission) {
-                askedPermission = true;
-                activity.requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, PERMISSION_REQUEST);
-            }
+        if (!allowed()) {
             return;
         }
         int id;
