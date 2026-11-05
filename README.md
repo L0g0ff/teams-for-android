@@ -22,8 +22,9 @@ Microsoft Teams itself is proprietary software served by Microsoft and is not in
 - Persistent cookies
 - Android touch and pinch zoom
 - Linux desktop User-Agent using the installed Chromium/WebView version
+- Camera and microphone for Teams calls, granted only to Teams origins after Android asks for permission
 
-Not implemented: Android push notifications, native calls, background services, or file-picker integration.
+Not implemented: Android push notifications, calls in the background, screen sharing, background services, or file-picker integration.
 
 ## Build
 
