@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_settings_unavailable">Open Android Settings, then Apps, Teams, Permissions to allow the camera and microphone.</string>
+</resources>
