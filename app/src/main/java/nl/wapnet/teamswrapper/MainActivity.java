@@ -2,12 +2,16 @@ package nl.wapnet.teamswrapper;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.KeyEvent;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
@@ -150,6 +154,43 @@ public final class MainActivity extends Activity {
         } catch (ActivityNotFoundException e) {
             Toast.makeText(this, R.string.media_settings_unavailable, Toast.LENGTH_LONG).show();
         }
+    }
+
+    // PR test builds only: volume-up runs a media probe inside Teams and shows a copyable report.
+    private static final String MEDIA_PROBE = "(async()=>{const r={secure:isSecureContext,ua:navigator.userAgent};"
+            + "for(const n of['camera','microphone'])try{r[n]=(await navigator.permissions.query({name:n})).state}catch(e){r[n]='ERR '+e}"
+            + "for(const c of[{audio:true},{video:true},{audio:true,video:true}])try{const s=await navigator.mediaDevices.getUserMedia(c);"
+            + "r[JSON.stringify(c)]=s.getTracks().map(t=>t.kind+':'+t.label);s.getTracks().forEach(t=>t.stop())}"
+            + "catch(e){r[JSON.stringify(c)]='ERR '+e.name+': '+e.message}"
+            + "r.devices=(await navigator.mediaDevices.enumerateDevices()).map(d=>d.kind+':'+(d.label||'?'));"
+            + "return JSON.stringify(r,null,1)})()";
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode != KeyEvent.KEYCODE_VOLUME_UP || !getResources().getBoolean(R.bool.webview_debugging)) {
+            return super.onKeyDown(keyCode, event);
+        }
+        // evaluateJavascript cannot await; the probe stores its result and a second call reads it.
+        webView.evaluateJavascript("window.__probe=null;" + MEDIA_PROBE + ".then(r=>window.__probe=r)", null);
+        webView.postDelayed(() -> webView.evaluateJavascript("window.__probe", this::showProbe), 4000);
+        return true;
+    }
+
+    private void showProbe(String json) {
+        String report;
+        try {
+            report = new org.json.JSONTokener(json).nextValue().toString();
+        } catch (org.json.JSONException e) {
+            report = json;
+        }
+        String text = report;
+        new AlertDialog.Builder(this)
+                .setTitle("Media probe")
+                .setMessage(text)
+                .setPositiveButton("Copy", (d, w) -> getSystemService(ClipboardManager.class)
+                        .setPrimaryClip(ClipData.newPlainText("Media probe", text)))
+                .setNegativeButton("Close", null)
+                .show();
     }
 
     @Override
