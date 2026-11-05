@@ -203,9 +203,22 @@ public final class MainActivity extends Activity {
             + "r.devices=(await navigator.mediaDevices.enumerateDevices()).map(d=>d.kind+':'+(d.label||'?'));"
             + "return JSON.stringify(r,null,1)})()";
 
+    private static final String DELAYED_TEST_NOTIFICATION = "setTimeout(()=>{"
+            + "const n=new Notification('Teams for Android test',{body:'Delayed test notification'});"
+            + "n.onclick=()=>alert('Test notification tap reached Teams')},10000)";
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode != KeyEvent.KEYCODE_VOLUME_UP || !getResources().getBoolean(R.bool.webview_debugging)) {
+        if (!getResources().getBoolean(R.bool.webview_debugging)) {
+            return super.onKeyDown(keyCode, event);
+        }
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
+            webView.evaluateJavascript(DELAYED_TEST_NOTIFICATION, null);
+            Toast.makeText(this, "Test notification in 10 s", Toast.LENGTH_SHORT).show();
+            return true;
+        }
+        if (keyCode != KeyEvent.KEYCODE_VOLUME_UP) {
             return super.onKeyDown(keyCode, event);
         }
         // evaluateJavascript cannot await; the probe stores its result and a second call reads it.
