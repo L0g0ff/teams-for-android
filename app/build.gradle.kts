@@ -3,6 +3,9 @@ plugins {
 }
 
 val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
+val ciBuildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toInt()
+val baseVersionCode = 3
+val baseVersionName = "0.1.2"
 
 android {
     namespace = "nl.wapnet.teamswrapper"
@@ -12,8 +15,9 @@ android {
         applicationId = "nl.wapnet.teamswrapper"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        // ponytail: supports 100,000 total CI runs before version-code ranges overlap.
+        versionCode = ciBuildNumber?.let { baseVersionCode * 100_000 + it } ?: baseVersionCode
+        versionName = ciBuildNumber?.let { "$baseVersionName+build.$it" } ?: baseVersionName
     }
 
     signingConfigs {
