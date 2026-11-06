@@ -39,6 +39,16 @@ The launcher icon adapts the visual composition of the Teams for Linux icon, rep
 
 Not implemented: notifications after Android stops the app (Teams Web push needs a browser push service that WebView lacks), calls in the background, screen sharing, background services, or file-picker integration.
 
+## Diagnostics
+
+Press **volume up and volume down together** to open a diagnostics menu:
+
+- **Media diagnostics:** camera/microphone permission state, capture test, device list and Android call-audio routing, with a Copy button for bug reports.
+- **Test notification in 10 s:** sends a notification through the same path as Teams, so the app can be moved to the background first.
+- **Android app settings:** permissions and notifications for this app.
+
+Pull-request test builds additionally allow WebView remote debugging via `chrome://inspect`.
+
 ## Build
 
 Requirements: JDK 21 and an Android SDK containing API 37.

@@ -3,12 +3,14 @@ package nl.wapnet.teamswrapper;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.KeyEvent;
@@ -30,6 +32,10 @@ public final class MainActivity extends Activity {
     private static final int MEDIA_PERMISSION_REQUEST = 1;
     private WebView webView;
     private Notifications notifications;
+    private boolean volumeUpDown;
+    private boolean volumeDownDown;
+    private boolean probeRunning;
+    private Dialog openDialog;
     // Android WebView always answers permissions.query with "prompt" for camera/microphone, because
     // the embedding app decides per request. Teams reads that as "blocked by the browser" and never
     // calls getUserMedia. Report "granted" instead; the real decision still happens in
@@ -194,7 +200,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    // PR test builds only: volume-up runs a media probe inside Teams and shows a copyable report.
+    // Diagnostics menu (volume up + down together): media probe and a delayed test notification.
     private static final String MEDIA_PROBE = "(async()=>{const r={secure:isSecureContext,ua:navigator.userAgent};"
             + "for(const n of['camera','microphone'])try{r[n]=(await navigator.permissions.query({name:n})).state}catch(e){r[n]='ERR '+e}"
             + "for(const c of[{audio:true},{video:true},{audio:true,video:true}])try{const s=await navigator.mediaDevices.getUserMedia(c);"
@@ -209,22 +215,95 @@ public final class MainActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (!getResources().getBoolean(R.bool.webview_debugging)) {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            volumeUpDown = true;
+        } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            volumeDownDown = true;
+        } else {
             return super.onKeyDown(keyCode, event);
         }
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
-            webView.evaluateJavascript(DELAYED_TEST_NOTIFICATION, null);
-            Toast.makeText(this, "Test notification in 10 s", Toast.LENGTH_SHORT).show();
+        if (volumeUpDown && volumeDownDown) {
+            // Holding the keys repeats onKeyDown; only the first press opens the menu.
+            if (event.getRepeatCount() == 0) {
+                showDiagnosticsMenu();
+            }
             return true;
         }
-        if (keyCode != KeyEvent.KEYCODE_VOLUME_UP) {
-            return super.onKeyDown(keyCode, event);
+        // A single volume key keeps changing the volume as usual.
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            volumeUpDown = false;
+        } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            volumeDownDown = false;
         }
+        return super.onKeyUp(keyCode, event);
+    }
+
+    private void showDiagnosticsMenu() {
+        if (openDialog != null && openDialog.isShowing()) {
+            return;
+        }
+        String[] items = {
+            getString(R.string.diagnostics_media),
+            getString(R.string.diagnostics_notification),
+            getString(R.string.diagnostics_app_settings),
+        };
+        show(new AlertDialog.Builder(this)
+                .setTitle(R.string.diagnostics_title)
+                .setItems(items, (d, which) -> {
+                    if (which == 0) {
+                        runMediaProbe();
+                    } else if (which == 1) {
+                        // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
+                        webView.evaluateJavascript(DELAYED_TEST_NOTIFICATION, null);
+                        Toast.makeText(this, R.string.diagnostics_notification, Toast.LENGTH_SHORT).show();
+                    } else {
+                        openAppSettings();
+                    }
+                }));
+    }
+
+    private void runMediaProbe() {
+        if (probeRunning) {
+            return;
+        }
+        probeRunning = true;
         // evaluateJavascript cannot await; the probe stores its result and a second call reads it.
         webView.evaluateJavascript("window.__probe=null;" + MEDIA_PROBE + ".then(r=>window.__probe=r)", null);
-        webView.postDelayed(() -> webView.evaluateJavascript("window.__probe", this::showProbe), 4000);
-        return true;
+        webView.postDelayed(() -> webView.evaluateJavascript("window.__probe", json -> {
+            probeRunning = false;
+            showProbe(json);
+        }), 4000);
+    }
+
+    private void show(AlertDialog.Builder builder) {
+        if (openDialog != null && openDialog.isShowing()) {
+            openDialog.dismiss();
+        }
+        openDialog = builder.show();
+    }
+
+    /** Native call-audio routing, which the page cannot see. */
+    private String audioState() {
+        android.media.AudioManager audio = getSystemService(android.media.AudioManager.class);
+        StringBuilder out = new StringBuilder("mode=").append(audio.getMode())
+                .append(" (3=IN_COMMUNICATION)\nspeakerphoneOn=").append(audio.isSpeakerphoneOn())
+                .append("\nvoiceCallVolume=").append(audio.getStreamVolume(android.media.AudioManager.STREAM_VOICE_CALL))
+                .append('/').append(audio.getStreamMaxVolume(android.media.AudioManager.STREAM_VOICE_CALL));
+        if (Build.VERSION.SDK_INT >= 31) {
+            android.media.AudioDeviceInfo current = audio.getCommunicationDevice();
+            out.append("\ncommunicationDevice=").append(current == null ? "none" : current.getType());
+            out.append("\navailable=");
+            for (android.media.AudioDeviceInfo device : audio.getAvailableCommunicationDevices()) {
+                out.append(device.getType()).append(' ');
+            }
+            out.append("(1=earpiece 2=speaker)");
+        }
+        return out.toString();
     }
 
     private void showProbe(String json) {
@@ -234,14 +313,13 @@ public final class MainActivity extends Activity {
         } catch (org.json.JSONException e) {
             report = json;
         }
-        String text = report;
-        new AlertDialog.Builder(this)
-                .setTitle("Media probe")
+        String text = audioState() + "\n" + report;
+        show(new AlertDialog.Builder(this)
+                .setTitle(R.string.diagnostics_media)
                 .setMessage(text)
-                .setPositiveButton("Copy", (d, w) -> getSystemService(ClipboardManager.class)
-                        .setPrimaryClip(ClipData.newPlainText("Media probe", text)))
-                .setNegativeButton("Close", null)
-                .show();
+                .setPositiveButton(R.string.diagnostics_copy, (d, w) -> getSystemService(ClipboardManager.class)
+                        .setPrimaryClip(ClipData.newPlainText("Media diagnostics", text)))
+                .setNegativeButton(R.string.diagnostics_close, null));
     }
 
     @Override
@@ -265,6 +343,9 @@ public final class MainActivity extends Activity {
             request.deny();
         }
         pendingMediaRequests.clear();
+        if (openDialog != null) {
+            openDialog.dismiss();
+        }
         webView.destroy();
         super.onDestroy();
     }
