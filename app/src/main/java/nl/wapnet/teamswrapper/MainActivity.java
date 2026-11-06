@@ -36,6 +36,7 @@ public final class MainActivity extends Activity {
     private boolean volumeDownDown;
     private boolean probeRunning;
     private Dialog openDialog;
+    private CallAudio callAudio;
     // Android WebView always answers permissions.query with "prompt" for camera/microphone, because
     // the embedding app decides per request. Teams reads that as "blocked by the browser" and never
     // calls getUserMedia. Report "granted" instead; the real decision still happens in
@@ -247,24 +248,49 @@ public final class MainActivity extends Activity {
         if (openDialog != null && openDialog.isShowing()) {
             return;
         }
-        String[] items = {
-            getString(R.string.diagnostics_media),
-            getString(R.string.diagnostics_notification),
-            getString(R.string.diagnostics_app_settings),
-        };
+        List<String> items = new ArrayList<>();
+        items.add(getString(R.string.diagnostics_media));
+        items.add(getString(R.string.diagnostics_notification));
+        items.add(getString(R.string.diagnostics_app_settings));
+        if (Build.VERSION.SDK_INT >= 31 && callAudio() != null) {
+            items.add(getString(callAudio.onEarpiece() ? R.string.call_audio_to_speaker : R.string.call_audio_to_earpiece));
+        }
         show(new AlertDialog.Builder(this)
                 .setTitle(R.string.diagnostics_title)
-                .setItems(items, (d, which) -> {
-                    if (which == 0) {
+                .setItems(items.toArray(new String[0]), (d, which) -> {
+                    if (which == 3) {
+                        toggleCallAudio();
+                    } else if (which == 0) {
                         runMediaProbe();
                     } else if (which == 1) {
                         // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
                         webView.evaluateJavascript(DELAYED_TEST_NOTIFICATION, null);
                         Toast.makeText(this, R.string.diagnostics_notification, Toast.LENGTH_SHORT).show();
-                    } else {
+                    } else if (which == 2) {
                         openAppSettings();
                     }
                 }));
+    }
+
+    /** Null on Android 11 and older, and on devices without an earpiece. */
+    private CallAudio callAudio() {
+        if (Build.VERSION.SDK_INT < 31) {
+            return null;
+        }
+        if (callAudio == null) {
+            callAudio = new CallAudio(getSystemService(android.media.AudioManager.class));
+        }
+        return callAudio.hasEarpiece() ? callAudio : null;
+    }
+
+    private void toggleCallAudio() {
+        if (Build.VERSION.SDK_INT < 31 || callAudio == null) {
+            return;
+        }
+        boolean ok = callAudio.toggle();
+        int message = !ok ? R.string.call_audio_failed
+                : callAudio.onEarpiece() ? R.string.call_audio_on_earpiece : R.string.call_audio_on_speaker;
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
     private void runMediaProbe() {
@@ -345,6 +371,9 @@ public final class MainActivity extends Activity {
         pendingMediaRequests.clear();
         if (openDialog != null) {
             openDialog.dismiss();
+        }
+        if (Build.VERSION.SDK_INT >= 31 && callAudio != null) {
+            callAudio.restore();
         }
         webView.destroy();
         super.onDestroy();
