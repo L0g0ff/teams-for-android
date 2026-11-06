@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="artwork/icon-1024.png" alt="Teams for Android icon" width="128">
+</p>
+
 # Teams for Android
 
 A minimal Android WebView wrapper for Microsoft Teams Web.
@@ -15,6 +19,10 @@ This project was inspired by [Teams for Linux](https://github.com/IsmaelMartinez
 **It does not contain Teams for Linux source code.** Teams for Linux is an Electron desktop application; this is an independent native Android WebView wrapper implementing the same basic idea with much less code.
 
 Microsoft Teams itself is proprietary software served by Microsoft and is not included in this repository.
+
+## Feature parity
+
+See [docs/feature-parity.md](docs/feature-parity.md) for which Teams for Linux features are ported, planned, deferred or not applicable.
 
 ## Artwork
 
