@@ -273,10 +273,16 @@ public final class MainActivity extends Activity {
             + "return JSON.stringify(r,null,1)})()";
 
     // Broken <img> elements on the page (e.g. link-preview thumbnails) and what a refetch returns.
+    // Broken <img> elements on the page (e.g. link-preview thumbnails): how the element is set up,
+    // whether a fresh Image() of the same URL loads, and what a credentialed fetch returns.
     private static final String IMAGE_PROBE = "(async()=>{const r=[];"
-            + "for(const i of [...document.images].filter(i=>i.complete&&i.naturalWidth===0&&i.currentSrc).slice(0,5)){"
-            + "const u=i.currentSrc,e={src:u.slice(0,160)};"
-            + "const t=performance.getEntriesByName(u)[0];if(t)e.timing={status:t.responseStatus,size:t.transferSize};"
+            + "const load=(u,c)=>new Promise(ok=>{const i=new Image();if(c)i.crossOrigin=c;"
+            + "i.onload=()=>ok('load '+i.naturalWidth+'x'+i.naturalHeight);i.onerror=()=>ok('error');"
+            + "setTimeout(()=>ok('timeout'),3000);i.src=u});"
+            + "for(const i of [...document.images].filter(i=>i.complete&&i.naturalWidth===0&&i.currentSrc).slice(0,3)){"
+            + "const u=i.currentSrc,e={src:u.slice(0,120),attr:(i.getAttribute('src')||'').slice(0,40),"
+            + "crossOrigin:i.crossOrigin,referrerPolicy:i.referrerPolicy,loading:i.loading,srcset:!!i.srcset};"
+            + "e.image=await load(u,null);e.imageCredentials=await load(u,'use-credentials');"
             + "try{const f=await fetch(u,{credentials:'include'});e.fetch=f.status+' '+f.headers.get('content-type')}"
             + "catch(x){e.fetch='ERR '+x.name+': '+x.message}r.push(e)}"
             + "return JSON.stringify({broken:r.length,images:r},null,1)})()";
@@ -370,10 +376,11 @@ public final class MainActivity extends Activity {
         probeRunning = true;
         // evaluateJavascript cannot await; the probe stores its result and a second call reads it.
         webView.evaluateJavascript("window.__probe=null;" + probe + ".then(r=>window.__probe=r)", null);
+        // ponytail: fixed wait; the image probe needs up to ~20 s for three images.
         webView.postDelayed(() -> webView.evaluateJavascript("window.__probe", json -> {
             probeRunning = false;
             showProbe(json, title, withAudioState);
-        }), 4000);
+        }), withAudioState ? 4000 : 20000);
     }
 
     private void show(AlertDialog.Builder builder) {
