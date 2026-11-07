@@ -28,6 +28,26 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Teams links from other apps; OriginPolicy.deepLink validates before loading. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="msteams" />
+            </intent-filter>
+            <!-- Not autoVerify: Microsoft's domains cannot list this app, so Android 12+ needs
+                 "Open by default" enabled by the user for https links. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="teams.microsoft.com" />
+                <data android:host="teams.cloud.microsoft" />
+                <data android:host="teams.live.com" />
+                <data android:pathPrefix="/l/" />
+                <data android:pathPrefix="/meet/" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>
