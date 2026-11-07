@@ -3,4 +3,15 @@
     <string name="media_settings_unavailable">Open Android Settings, then Apps, Teams, Permissions to allow the camera and microphone.</string>
     <string name="media_denied">Camera/microphone blocked by Teams for Android: %1$s</string>
     <string name="notification_channel">Teams messages</string>
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostics_media">Media diagnostics</string>
+    <string name="diagnostics_notification">Test notification in 10 s</string>
+    <string name="diagnostics_app_settings">Android app settings</string>
+    <string name="diagnostics_copy">Copy</string>
+    <string name="diagnostics_close">Close</string>
+    <string name="call_audio_to_earpiece">Call audio: switch to earpiece</string>
+    <string name="call_audio_to_speaker">Call audio: switch to loudspeaker</string>
+    <string name="call_audio_on_earpiece">Call audio on earpiece</string>
+    <string name="call_audio_on_speaker">Call audio on loudspeaker</string>
+    <string name="call_audio_failed">Android did not accept the audio route</string>
 </resources>
