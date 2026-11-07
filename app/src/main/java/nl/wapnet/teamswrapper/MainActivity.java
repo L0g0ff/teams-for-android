@@ -88,6 +88,14 @@ public final class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
+                if (url.regionMatches(true, 0, "msteams:", 0, 8)) {
+                    // Teams' launcher page hands meetings to the "desktop app" via msteams:; stay in-app.
+                    String link = OriginPolicy.deepLink(url);
+                    if (link != null) {
+                        view.loadUrl(link);
+                    }
+                    return true;
+                }
                 if (OriginPolicy.isMediaSettingsLink(url)) {
                     openAppSettings();
                 }
@@ -106,12 +114,18 @@ public final class MainActivity extends Activity {
                 pendingMediaRequests.remove(request);
             }
         });
-        webView.loadUrl(TEAMS_URL);
+        String link = OriginPolicy.deepLink(getIntent().getDataString());
+        webView.loadUrl(link != null ? link : TEAMS_URL);
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        // singleTask: a link from another app reuses this Activity and its signed-in WebView.
+        String link = OriginPolicy.deepLink(intent.getDataString());
+        if (link != null) {
+            webView.loadUrl(link);
+        }
         if (notifications != null) {
             notifications.clicked(intent);
         }

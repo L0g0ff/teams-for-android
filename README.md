@@ -36,6 +36,7 @@ The launcher icon adapts the visual composition of the Teams for Linux icon, rep
 - Linux desktop User-Agent using the installed Chromium/WebView version
 - Camera and microphone for Teams calls, granted only to Teams origins after Android asks for permission
 - Android notifications for Teams Web notifications while the app runs in the background; tapping one opens the chat
+- Teams chat and meeting links (`https://teams.microsoft.com/l/...`, `/meet/...`, `msteams:`) from other apps open in the running app. For `https` links on Android 12+, enable them once under **Android Settings → Apps → Teams → Open by default → Add link**.
 
 Not implemented: notifications after Android stops the app (Teams Web push needs a browser push service that WebView lacks), calls in the background, screen sharing, background services, or file-picker integration.
 
