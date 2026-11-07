@@ -78,12 +78,13 @@ public final class MainActivity extends Activity {
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, MEDIA_PERMISSION_STATE_FIX, OriginPolicy.teamsOrigins());
+            WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.preview_image_fix), OriginPolicy.teamsOrigins());
             if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
                 notifications = new Notifications(this);
                 // Origin-restricted by WebView itself: other sites never see the bridge object.
                 WebViewCompat.addWebMessageListener(webView, Notifications.BRIDGE, OriginPolicy.teamsOrigins(),
                         (view, message, origin, isMainFrame, reply) -> notifications.show(message.getData(), reply));
-                WebViewCompat.addDocumentStartJavaScript(webView, Notifications.shim(this), OriginPolicy.teamsOrigins());
+                WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.notification_shim), OriginPolicy.teamsOrigins());
             }
         }
 
@@ -238,6 +239,15 @@ public final class MainActivity extends Activity {
                 return Manifest.permission.RECORD_AUDIO;
             default:
                 return null;
+        }
+    }
+
+    private String rawScript(int id) {
+        try (java.io.InputStream in = getResources().openRawResource(id);
+                java.util.Scanner all = new java.util.Scanner(in, "UTF-8").useDelimiter("\\A")) {
+            return all.next();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
         }
     }
 
