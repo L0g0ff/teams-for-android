@@ -12,6 +12,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Message;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.webkit.CookieManager;
@@ -68,6 +69,8 @@ public final class MainActivity extends Activity {
         // Remote call audio must start without a fresh tap.
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setUserAgentString(UserAgent.desktop(settings.getUserAgentString()));
+        // target=_blank links (chat links) arrive in onCreateWindow instead of replacing Teams.
+        settings.setSupportMultipleWindows(true);
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
@@ -99,11 +102,43 @@ public final class MainActivity extends Activity {
                 if (OriginPolicy.isMediaSettingsLink(url)) {
                     openAppSettings();
                 }
-                // Other ms-settings: targets are Windows-only; never hand them to another app.
-                return OriginPolicy.isWindowsSettingsLink(url);
+                if (OriginPolicy.isWindowsSettingsLink(url)) {
+                    // Other ms-settings: targets are Windows-only; never hand them to another app.
+                    return true;
+                }
+                String scheme = request.getUrl().getScheme();
+                if ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme)) {
+                    // ponytail: same-window navigations stay in-app so redirects to a tenant's own
+                    // sign-in server keep working; chat links use new windows (onCreateWindow).
+                    return false;
+                }
+                openExternally(url);
+                return true;
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message result) {
+                // A throwaway WebView only catches the URL of the new window; it never renders it.
+                WebView catcher = new WebView(view.getContext());
+                catcher.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView popup, WebResourceRequest request) {
+                        String url = request.getUrl().toString();
+                        if (OriginPolicy.opensInApp(url)) {
+                            webView.loadUrl(url);
+                        } else {
+                            openExternally(url);
+                        }
+                        popup.post(popup::destroy);
+                        return true;
+                    }
+                });
+                ((WebView.WebViewTransport) result.obj).setWebView(catcher);
+                result.sendToTarget();
+                return true;
+            }
+
             @Override
             public void onPermissionRequest(PermissionRequest request) {
                 handleMediaRequest(request);
@@ -203,6 +238,19 @@ public final class MainActivity extends Activity {
                 return Manifest.permission.RECORD_AUDIO;
             default:
                 return null;
+        }
+    }
+
+    /** Hands http(s), mailto: and tel: links to Android; other schemes are dropped. */
+    private void openExternally(String url) {
+        if (!OriginPolicy.opensExternally(url)) {
+            Toast.makeText(this, R.string.link_blocked, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, R.string.link_no_app, Toast.LENGTH_SHORT).show();
         }
     }
 

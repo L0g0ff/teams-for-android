@@ -14,4 +14,6 @@
     <string name="call_audio_on_earpiece">Call audio on earpiece</string>
     <string name="call_audio_on_speaker">Call audio on loudspeaker</string>
     <string name="call_audio_failed">Android did not accept the audio route</string>
+    <string name="link_blocked">This link type is not opened for safety.</string>
+    <string name="link_no_app">No app can open this link.</string>
 </resources>
