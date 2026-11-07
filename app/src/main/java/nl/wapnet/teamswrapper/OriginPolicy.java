@@ -12,6 +12,10 @@ final class OriginPolicy {
     // Teams chat, channel and meeting links (/l/...) and short meeting links (/meet/...).
     private static final Pattern TEAMS_LINK =
             Pattern.compile("https://([^/?#:@]+)(?::443)?/(?:l|meet)/.*", Pattern.CASE_INSENSITIVE);
+    // Microsoft sign-in may open in a new window; it must stay in-app to keep the session.
+    private static final Set<String> SIGN_IN_HOSTS = Set.of(
+            "login.microsoftonline.com", "login.microsoft.com", "login.live.com", "login.windows.net");
+    private static final Set<String> EXTERNAL_SCHEMES = Set.of("http", "https", "mailto", "tel");
     private static final Set<String> SETTINGS_LINKS =
             Set.of("ms-settings:privacy-webcam", "ms-settings:privacy-microphone");
 
@@ -23,6 +27,29 @@ final class OriginPolicy {
                     && uri.getHost() != null
                     && TEAMS_HOSTS.contains(uri.getHost().toLowerCase(Locale.ROOT))
                     && (uri.getPort() == -1 || uri.getPort() == 443);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** New windows on Teams or Microsoft sign-in open in the app; everything else does not. */
+    static boolean opensInApp(String url) {
+        try {
+            URI uri = new URI(url);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            return "https".equals(uri.getScheme()) && uri.getRawUserInfo() == null
+                    && (uri.getPort() == -1 || uri.getPort() == 443)
+                    && (TEAMS_HOSTS.contains(host) || SIGN_IN_HOSTS.contains(host));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Schemes safe to hand to Android (browser, mail, dialer). intent:, file:, javascript: etc. are not. */
+    static boolean opensExternally(String url) {
+        try {
+            String scheme = new URI(url).getScheme();
+            return scheme != null && EXTERNAL_SCHEMES.contains(scheme.toLowerCase(Locale.ROOT));
         } catch (Exception e) {
             return false;
         }
@@ -106,6 +133,27 @@ final class OriginPolicy {
         assert deepLink("javascript:alert(1)") == null;
         assert deepLink("https://teams.microsoft.com/l/chat x") == null;
         assert deepLink(null) == null;
+        assert opensInApp("https://teams.microsoft.com/v2/");
+        assert opensInApp("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?x=1");
+        assert opensInApp("https://LOGIN.live.com/");
+        assert !opensInApp("https://example.com/");
+        assert !opensInApp("https://teams.microsoft.com.evil.example/");
+        assert !opensInApp("https://evil.example@teams.microsoft.com/");
+        assert !opensInApp("http://teams.microsoft.com/");
+        assert !opensInApp("https://teams.microsoft.com:8443/");
+        assert !opensInApp("https://contoso.sharepoint.com/file.docx");
+        assert !opensInApp("not a uri");
+        assert opensExternally("https://example.com/page");
+        assert opensExternally("http://example.com/");
+        assert opensExternally("mailto:alice@example.com");
+        assert opensExternally("TEL:+31201234567");
+        assert !opensExternally("intent://scan/#Intent;scheme=zxing;end");
+        assert !opensExternally("javascript:alert(1)");
+        assert !opensExternally("file:///data/x");
+        assert !opensExternally("content://x/y");
+        assert !opensExternally("data:text/html,x");
+        assert !opensExternally("ms-settings:network");
+        assert !opensExternally("not a uri");
         for (String origin : teamsOrigins()) {
             assert mayCapture(origin);
         }
