@@ -10,9 +10,6 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import androidx.webkit.JavaScriptReplyProxy;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Scanner;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -47,15 +44,6 @@ final class Notifications {
     private boolean allowed() {
         return Build.VERSION.SDK_INT < 33
                 || activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    static String shim(Activity activity) {
-        try (InputStream in = activity.getResources().openRawResource(R.raw.notification_shim);
-                Scanner all = new Scanner(in, "UTF-8").useDelimiter("\\A")) {
-            return all.next();
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
-        }
     }
 
     void show(String json, JavaScriptReplyProxy reply) {
