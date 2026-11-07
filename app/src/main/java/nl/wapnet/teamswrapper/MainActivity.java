@@ -78,12 +78,13 @@ public final class MainActivity extends Activity {
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, MEDIA_PERMISSION_STATE_FIX, OriginPolicy.teamsOrigins());
+            WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.preview_image_fix), OriginPolicy.teamsOrigins());
             if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
                 notifications = new Notifications(this);
                 // Origin-restricted by WebView itself: other sites never see the bridge object.
                 WebViewCompat.addWebMessageListener(webView, Notifications.BRIDGE, OriginPolicy.teamsOrigins(),
                         (view, message, origin, isMainFrame, reply) -> notifications.show(message.getData(), reply));
-                WebViewCompat.addDocumentStartJavaScript(webView, Notifications.shim(this), OriginPolicy.teamsOrigins());
+                WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.notification_shim), OriginPolicy.teamsOrigins());
             }
         }
 
@@ -241,6 +242,15 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private String rawScript(int id) {
+        try (java.io.InputStream in = getResources().openRawResource(id);
+                java.util.Scanner all = new java.util.Scanner(in, "UTF-8").useDelimiter("\\A")) {
+            return all.next();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** Hands http(s), mailto: and tel: links to Android; other schemes are dropped. */
     private void openExternally(String url) {
         if (!OriginPolicy.opensExternally(url)) {
@@ -271,6 +281,21 @@ public final class MainActivity extends Activity {
             + "catch(e){r[JSON.stringify(c)]='ERR '+e.name+': '+e.message}"
             + "r.devices=(await navigator.mediaDevices.enumerateDevices()).map(d=>d.kind+':'+(d.label||'?'));"
             + "return JSON.stringify(r,null,1)})()";
+
+    // Broken <img> elements on the page (e.g. link-preview thumbnails) and what a refetch returns.
+    // Broken <img> elements on the page (e.g. link-preview thumbnails): how the element is set up,
+    // whether a fresh Image() of the same URL loads, and what a credentialed fetch returns.
+    private static final String IMAGE_PROBE = "(async()=>{const r=[];"
+            + "const load=(u,c)=>new Promise(ok=>{const i=new Image();if(c)i.crossOrigin=c;"
+            + "i.onload=()=>ok('load '+i.naturalWidth+'x'+i.naturalHeight);i.onerror=()=>ok('error');"
+            + "setTimeout(()=>ok('timeout'),3000);i.src=u});"
+            + "for(const i of [...document.images].filter(i=>i.complete&&i.naturalWidth===0&&i.currentSrc).slice(0,3)){"
+            + "const u=i.currentSrc,e={src:u.slice(0,120),attr:(i.getAttribute('src')||'').slice(0,40),"
+            + "crossOrigin:i.crossOrigin,referrerPolicy:i.referrerPolicy,loading:i.loading,srcset:!!i.srcset};"
+            + "e.image=await load(u,null);e.imageCredentials=await load(u,'use-credentials');"
+            + "try{const f=await fetch(u,{credentials:'include'});e.fetch=f.status+' '+f.headers.get('content-type')}"
+            + "catch(x){e.fetch='ERR '+x.name+': '+x.message}r.push(e)}"
+            + "return JSON.stringify({broken:r.length,images:r},null,1)})()";
 
     private static final String DELAYED_TEST_NOTIFICATION = "setTimeout(()=>{"
             + "const n=new Notification('Teams for Android test',{body:'Delayed test notification'});"
@@ -311,27 +336,26 @@ public final class MainActivity extends Activity {
             return;
         }
         List<String> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
         items.add(getString(R.string.diagnostics_media));
+        actions.add(() -> runProbe(MEDIA_PROBE, R.string.diagnostics_media, true));
+        items.add(getString(R.string.diagnostics_images));
+        actions.add(() -> runProbe(IMAGE_PROBE, R.string.diagnostics_images, false));
         items.add(getString(R.string.diagnostics_notification));
+        actions.add(() -> {
+            // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
+            webView.evaluateJavascript(DELAYED_TEST_NOTIFICATION, null);
+            Toast.makeText(this, R.string.diagnostics_notification, Toast.LENGTH_SHORT).show();
+        });
         items.add(getString(R.string.diagnostics_app_settings));
+        actions.add(this::openAppSettings);
         if (Build.VERSION.SDK_INT >= 31 && callAudio() != null) {
             items.add(getString(callAudio.onEarpiece() ? R.string.call_audio_to_speaker : R.string.call_audio_to_earpiece));
+            actions.add(this::toggleCallAudio);
         }
         show(new AlertDialog.Builder(this)
                 .setTitle(R.string.diagnostics_title)
-                .setItems(items.toArray(new String[0]), (d, which) -> {
-                    if (which == 3) {
-                        toggleCallAudio();
-                    } else if (which == 0) {
-                        runMediaProbe();
-                    } else if (which == 1) {
-                        // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
-                        webView.evaluateJavascript(DELAYED_TEST_NOTIFICATION, null);
-                        Toast.makeText(this, R.string.diagnostics_notification, Toast.LENGTH_SHORT).show();
-                    } else if (which == 2) {
-                        openAppSettings();
-                    }
-                }));
+                .setItems(items.toArray(new String[0]), (d, which) -> actions.get(which).run()));
     }
 
     /** Null on Android 11 and older, and on devices without an earpiece. */
@@ -355,17 +379,18 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
-    private void runMediaProbe() {
+    private void runProbe(String probe, int title, boolean withAudioState) {
         if (probeRunning) {
             return;
         }
         probeRunning = true;
         // evaluateJavascript cannot await; the probe stores its result and a second call reads it.
-        webView.evaluateJavascript("window.__probe=null;" + MEDIA_PROBE + ".then(r=>window.__probe=r)", null);
+        webView.evaluateJavascript("window.__probe=null;" + probe + ".then(r=>window.__probe=r)", null);
+        // ponytail: fixed wait; the image probe needs up to ~20 s for three images.
         webView.postDelayed(() -> webView.evaluateJavascript("window.__probe", json -> {
             probeRunning = false;
-            showProbe(json);
-        }), 4000);
+            showProbe(json, title, withAudioState);
+        }), withAudioState ? 4000 : 20000);
     }
 
     private void show(AlertDialog.Builder builder) {
@@ -394,16 +419,16 @@ public final class MainActivity extends Activity {
         return out.toString();
     }
 
-    private void showProbe(String json) {
+    private void showProbe(String json, int title, boolean withAudioState) {
         String report;
         try {
             report = new org.json.JSONTokener(json).nextValue().toString();
         } catch (org.json.JSONException e) {
             report = json;
         }
-        String text = audioState() + "\n" + report;
+        String text = withAudioState ? audioState() + "\n" + report : report;
         show(new AlertDialog.Builder(this)
-                .setTitle(R.string.diagnostics_media)
+                .setTitle(title)
                 .setMessage(text)
                 .setPositiveButton(R.string.diagnostics_copy, (d, w) -> getSystemService(ClipboardManager.class)
                         .setPrimaryClip(ClipData.newPlainText("Media diagnostics", text)))
