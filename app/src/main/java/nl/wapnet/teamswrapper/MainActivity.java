@@ -272,6 +272,15 @@ public final class MainActivity extends Activity {
             + "r.devices=(await navigator.mediaDevices.enumerateDevices()).map(d=>d.kind+':'+(d.label||'?'));"
             + "return JSON.stringify(r,null,1)})()";
 
+    // Broken <img> elements on the page (e.g. link-preview thumbnails) and what a refetch returns.
+    private static final String IMAGE_PROBE = "(async()=>{const r=[];"
+            + "for(const i of [...document.images].filter(i=>i.complete&&i.naturalWidth===0&&i.currentSrc).slice(0,5)){"
+            + "const u=i.currentSrc,e={src:u.slice(0,160)};"
+            + "const t=performance.getEntriesByName(u)[0];if(t)e.timing={status:t.responseStatus,size:t.transferSize};"
+            + "try{const f=await fetch(u,{credentials:'include'});e.fetch=f.status+' '+f.headers.get('content-type')}"
+            + "catch(x){e.fetch='ERR '+x.name+': '+x.message}r.push(e)}"
+            + "return JSON.stringify({broken:r.length,images:r},null,1)})()";
+
     private static final String DELAYED_TEST_NOTIFICATION = "setTimeout(()=>{"
             + "const n=new Notification('Teams for Android test',{body:'Delayed test notification'});"
             + "n.onclick=()=>alert('Test notification tap reached Teams')},10000)";
@@ -311,27 +320,26 @@ public final class MainActivity extends Activity {
             return;
         }
         List<String> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
         items.add(getString(R.string.diagnostics_media));
+        actions.add(() -> runProbe(MEDIA_PROBE, R.string.diagnostics_media, true));
+        items.add(getString(R.string.diagnostics_images));
+        actions.add(() -> runProbe(IMAGE_PROBE, R.string.diagnostics_images, false));
         items.add(getString(R.string.diagnostics_notification));
+        actions.add(() -> {
+            // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
+            webView.evaluateJavascript(DELAYED_TEST_NOTIFICATION, null);
+            Toast.makeText(this, R.string.diagnostics_notification, Toast.LENGTH_SHORT).show();
+        });
         items.add(getString(R.string.diagnostics_app_settings));
+        actions.add(this::openAppSettings);
         if (Build.VERSION.SDK_INT >= 31 && callAudio() != null) {
             items.add(getString(callAudio.onEarpiece() ? R.string.call_audio_to_speaker : R.string.call_audio_to_earpiece));
+            actions.add(this::toggleCallAudio);
         }
         show(new AlertDialog.Builder(this)
                 .setTitle(R.string.diagnostics_title)
-                .setItems(items.toArray(new String[0]), (d, which) -> {
-                    if (which == 3) {
-                        toggleCallAudio();
-                    } else if (which == 0) {
-                        runMediaProbe();
-                    } else if (which == 1) {
-                        // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
-                        webView.evaluateJavascript(DELAYED_TEST_NOTIFICATION, null);
-                        Toast.makeText(this, R.string.diagnostics_notification, Toast.LENGTH_SHORT).show();
-                    } else if (which == 2) {
-                        openAppSettings();
-                    }
-                }));
+                .setItems(items.toArray(new String[0]), (d, which) -> actions.get(which).run()));
     }
 
     /** Null on Android 11 and older, and on devices without an earpiece. */
@@ -355,16 +363,16 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
-    private void runMediaProbe() {
+    private void runProbe(String probe, int title, boolean withAudioState) {
         if (probeRunning) {
             return;
         }
         probeRunning = true;
         // evaluateJavascript cannot await; the probe stores its result and a second call reads it.
-        webView.evaluateJavascript("window.__probe=null;" + MEDIA_PROBE + ".then(r=>window.__probe=r)", null);
+        webView.evaluateJavascript("window.__probe=null;" + probe + ".then(r=>window.__probe=r)", null);
         webView.postDelayed(() -> webView.evaluateJavascript("window.__probe", json -> {
             probeRunning = false;
-            showProbe(json);
+            showProbe(json, title, withAudioState);
         }), 4000);
     }
 
@@ -394,16 +402,16 @@ public final class MainActivity extends Activity {
         return out.toString();
     }
 
-    private void showProbe(String json) {
+    private void showProbe(String json, int title, boolean withAudioState) {
         String report;
         try {
             report = new org.json.JSONTokener(json).nextValue().toString();
         } catch (org.json.JSONException e) {
             report = json;
         }
-        String text = audioState() + "\n" + report;
+        String text = withAudioState ? audioState() + "\n" + report : report;
         show(new AlertDialog.Builder(this)
-                .setTitle(R.string.diagnostics_media)
+                .setTitle(title)
                 .setMessage(text)
                 .setPositiveButton(R.string.diagnostics_copy, (d, w) -> getSystemService(ClipboardManager.class)
                         .setPrimaryClip(ClipData.newPlainText("Media diagnostics", text)))
