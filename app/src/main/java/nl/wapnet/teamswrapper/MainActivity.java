@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.DownloadManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ActivityNotFoundException;
@@ -12,12 +13,14 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Message;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.PermissionRequest;
+import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -91,6 +94,9 @@ public final class MainActivity extends Activity {
                 WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.notification_shim), OriginPolicy.teamsOrigins());
             }
         }
+
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, length) ->
+                download(url, userAgent, contentDisposition, mimeType));
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -300,6 +306,34 @@ public final class MainActivity extends Activity {
         } catch (java.io.IOException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /**
+     * Teams/SharePoint attachments via Android's DownloadManager, with the WebView session cookie
+     * for that URL. DownloadManager shows progress, completion and failure in its own notification.
+     */
+    private void download(String url, String userAgent, String contentDisposition, String mimeType) {
+        Uri uri = Uri.parse(url);
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            // blob:/data: files are generated inside the page; DownloadManager cannot fetch them.
+            Toast.makeText(this, getString(R.string.download_unsupported, uri.getScheme()), Toast.LENGTH_LONG).show();
+            return;
+        }
+        String name = URLUtil.guessFileName(url, contentDisposition, mimeType);
+        DownloadManager.Request request = new DownloadManager.Request(uri)
+                .addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url))
+                .addRequestHeader("User-Agent", userAgent)
+                .setMimeType(mimeType)
+                .setTitle(name)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+        if (Build.VERSION.SDK_INT >= 29) {
+            // Public Downloads without a storage permission from Android 10 on.
+            // ponytail: Android 8-9 keep DownloadManager's own location (open via the notification);
+            // a public folder there would need WRITE_EXTERNAL_STORAGE.
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
+        }
+        getSystemService(DownloadManager.class).enqueue(request);
+        Toast.makeText(this, getString(R.string.download_started, name), Toast.LENGTH_SHORT).show();
     }
 
     /** Hands http(s), mailto: and tel: links to Android; other schemes are dropped. */

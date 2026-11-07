@@ -37,6 +37,7 @@ The launcher icon adapts the visual composition of the Teams for Linux icon, rep
 - Camera and microphone for Teams calls, granted only to Teams origins after Android asks for permission
 - Android notifications for Teams Web notifications while the app runs in the background; tapping one opens the chat
 - Attach images and documents through the Android system picker (no storage permission)
+- Download Teams and SharePoint attachments to **Downloads** through Android's download manager, with progress and completion notifications (no storage permission)
 - Links in chats open in the default browser; Teams and Microsoft sign-in stay in the app. `mailto:` and `tel:` go to the mail and phone apps, other schemes (such as `intent:` or `file:`) are blocked
 - Teams chat and meeting links (`https://teams.microsoft.com/l/...`, `/meet/...`, `msteams:`) from other apps open in the running app. For `https` links on Android 12+, enable them once under **Android Settings → Apps → Teams → Open by default → Add link**.
 
