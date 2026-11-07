@@ -16,6 +16,7 @@ import android.os.Message;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.webkit.CookieManager;
+import android.webkit.ValueCallback;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -31,6 +32,9 @@ import java.util.List;
 public final class MainActivity extends Activity {
     private static final String TEAMS_URL = "https://teams.cloud.microsoft/";
     private static final int MEDIA_PERMISSION_REQUEST = 1;
+    private static final int FILE_CHOOSER_REQUEST = 3;
+    // At most one picker is open; a recreated Activity starts with null, so a late result is dropped.
+    private ValueCallback<Uri[]> fileChooserCallback;
     private WebView webView;
     private Notifications notifications;
     private boolean volumeUpDown;
@@ -141,6 +145,27 @@ public final class MainActivity extends Activity {
             }
 
             @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (fileChooserCallback != null) {
+                    fileChooserCallback.onReceiveValue(null);
+                }
+                fileChooserCallback = callback;
+                // System picker (ACTION_GET_CONTENT): grants read access per file, no storage permission.
+                Intent pick = params.createIntent();
+                if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                    pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                }
+                try {
+                    startActivityForResult(pick, FILE_CHOOSER_REQUEST);
+                } catch (ActivityNotFoundException e) {
+                    fileChooserCallback = null;
+                    Toast.makeText(MainActivity.this, R.string.link_no_app, Toast.LENGTH_SHORT).show();
+                    return false;
+                }
+                return true;
+            }
+
+            @Override
             public void onPermissionRequest(PermissionRequest request) {
                 handleMediaRequest(request);
             }
@@ -202,6 +227,32 @@ public final class MainActivity extends Activity {
             // A call needs both; one dialog avoids a second concurrent request being cancelled by Android.
             requestPermissions(missing.toArray(new String[0]), MEDIA_PERMISSION_REQUEST);
         }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode != FILE_CHOOSER_REQUEST) {
+            super.onActivityResult(requestCode, resultCode, data);
+            return;
+        }
+        ValueCallback<Uri[]> callback = fileChooserCallback;
+        fileChooserCallback = null;
+        if (callback == null) {
+            return;
+        }
+        Uri[] files = null;
+        if (resultCode == RESULT_OK && data != null) {
+            if (data.getClipData() != null) {
+                files = new Uri[data.getClipData().getItemCount()];
+                for (int i = 0; i < files.length; i++) {
+                    files[i] = data.getClipData().getItemAt(i).getUri();
+                }
+            } else if (data.getData() != null) {
+                files = new Uri[] {data.getData()};
+            }
+        }
+        // null tells WebView the picker was cancelled, so Teams can open it again.
+        callback.onReceiveValue(files);
     }
 
     @Override
@@ -456,6 +507,10 @@ public final class MainActivity extends Activity {
             request.deny();
         }
         pendingMediaRequests.clear();
+        if (fileChooserCallback != null) {
+            fileChooserCallback.onReceiveValue(null);
+            fileChooserCallback = null;
+        }
         if (openDialog != null) {
             openDialog.dismiss();
         }
