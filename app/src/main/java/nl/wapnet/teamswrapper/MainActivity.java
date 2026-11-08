@@ -58,6 +58,7 @@ public final class MainActivity extends Activity {
     // Last SharePoint sign-in attempt: hosts, paths and status codes only (no query strings).
     private final List<String> helperTrace = new ArrayList<>();
     private Notifications notifications;
+    private final BackgroundVisibility backgroundVisibility = new BackgroundVisibility();
     private final List<String> lifecycleTrace = new ArrayList<>();
     private boolean volumeUpDown;
     private boolean volumeDownDown;
@@ -116,6 +117,11 @@ public final class MainActivity extends Activity {
             WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.preview_image_fix), OriginPolicy.teamsOrigins());
             WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.lifecycle_diagnostics), OriginPolicy.teamsOrigins());
             if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+                WebViewCompat.addWebMessageListener(webView, BackgroundVisibility.BRIDGE,
+                        OriginPolicy.teamsOrigins(), (view, message, origin, isMainFrame, reply) ->
+                                backgroundVisibility.connected(message.getData(), isMainFrame, reply));
+                WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.background_visibility),
+                        OriginPolicy.teamsOrigins());
                 notifications = new Notifications(this);
                 // Origin-restricted by WebView itself: other sites never see the bridge object.
                 WebViewCompat.addWebMessageListener(webView, Notifications.BRIDGE, OriginPolicy.teamsOrigins(),
@@ -240,6 +246,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        backgroundVisibility.setBackgrounded(false);
         traceLifecycle("onResume");
         if (notifications != null) {
             notifications.clearAll();
@@ -798,6 +805,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        backgroundVisibility.setBackgrounded(true);
         traceLifecycle("onPause");
         CookieManager.getInstance().flush();
         super.onPause();
