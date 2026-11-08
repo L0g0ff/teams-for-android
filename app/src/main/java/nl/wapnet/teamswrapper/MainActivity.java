@@ -18,6 +18,7 @@ import android.os.Message;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.webkit.CookieManager;
+import android.webkit.MimeTypeMap;
 import android.webkit.ValueCallback;
 import android.webkit.PermissionRequest;
 import android.webkit.URLUtil;
@@ -319,7 +320,12 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, getString(R.string.download_unsupported, uri.getScheme()), Toast.LENGTH_LONG).show();
             return;
         }
-        String name = URLUtil.guessFileName(url, contentDisposition, mimeType);
+        // SharePoint/OneDrive serve files from .../download.aspx with the real name only in filename*=.
+        String name = FileName.fromContentDisposition(contentDisposition);
+        if (name == null) {
+            name = URLUtil.guessFileName(url, null, mimeType);
+        }
+        name = FileName.withExtension(name, MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType));
         DownloadManager.Request request = new DownloadManager.Request(uri)
                 .addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url))
                 .addRequestHeader("User-Agent", userAgent)
