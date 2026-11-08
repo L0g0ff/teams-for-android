@@ -8,6 +8,10 @@ import android.app.DownloadManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
+import android.database.Cursor;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -39,6 +43,14 @@ public final class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 3;
     // At most one picker is open; a recreated Activity starts with null, so a late result is dropped.
     private ValueCallback<Uri[]> fileChooserCallback;
+    // Reports the result of our own downloads, so a failure is not silent.
+    private final BroadcastReceiver downloadDone = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            reportDownload(intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1));
+        }
+    };
+    private final java.util.Set<Long> downloads = new java.util.HashSet<>();
     private WebView webView;
     private Notifications notifications;
     private boolean volumeUpDown;
@@ -96,6 +108,10 @@ public final class MainActivity extends Activity {
             }
         }
 
+        IntentFilter done = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        // Sent by the system download provider (another app), so the receiver must be exported.
+        // reportDownload ignores ids this app did not enqueue.
+        registerReceiver(downloadDone, done, Context.RECEIVER_EXPORTED);
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, length) ->
                 download(url, userAgent, contentDisposition, mimeType));
 
@@ -338,8 +354,27 @@ public final class MainActivity extends Activity {
             // a public folder there would need WRITE_EXTERNAL_STORAGE.
             request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
         }
-        getSystemService(DownloadManager.class).enqueue(request);
+        downloads.add(getSystemService(DownloadManager.class).enqueue(request));
         Toast.makeText(this, getString(R.string.download_started, name), Toast.LENGTH_SHORT).show();
+    }
+
+    private void reportDownload(long id) {
+        if (!downloads.remove(id)) {
+            return;
+        }
+        try (Cursor c = getSystemService(DownloadManager.class).query(new DownloadManager.Query().setFilterById(id))) {
+            if (c == null || !c.moveToFirst()) {
+                return;
+            }
+            int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+            String title = c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE));
+            String message = status == DownloadManager.STATUS_SUCCESSFUL
+                    ? getString(R.string.download_done, title)
+                    // Reason is the HTTP status (4xx/5xx) or a DownloadManager.ERROR_* code (1000+).
+                    : getString(R.string.download_failed, title,
+                            c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)));
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        }
     }
 
     /** Hands http(s), mailto: and tel: links to Android; other schemes are dropped. */
@@ -557,6 +592,7 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 31 && callAudio != null) {
             callAudio.restore();
         }
+        unregisterReceiver(downloadDone);
         webView.destroy();
         super.onDestroy();
     }
