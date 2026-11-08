@@ -37,6 +37,7 @@ The launcher icon adapts the visual composition of the Teams for Linux icon, rep
 - Camera and microphone for Teams calls, granted only to Teams origins after Android asks for permission
 - Android notifications for Teams Web notifications while the app runs in the background; tapping one opens the chat
 - Attach images and documents through the Android system picker (no storage permission)
+- Download Teams and SharePoint attachments to **Downloads** through Android's download manager, with progress and completion notifications (no storage permission)
 - Links in chats open in the default browser; Teams and Microsoft sign-in stay in the app. `mailto:` and `tel:` go to the mail and phone apps, other schemes (such as `intent:` or `file:`) are blocked
 - Teams chat and meeting links (`https://teams.microsoft.com/l/...`, `/meet/...`, `msteams:`) from other apps open in the running app. For `https` links on Android 12+, enable them once under **Android Settings → Apps → Teams → Open by default → Add link**.
 
@@ -50,6 +51,7 @@ Press **volume up and volume down together** to open a diagnostics menu:
 - **Image diagnostics:** images that failed to load on the current page (such as link-preview thumbnails), with the status a refetch returns.
 - **Test notification in 10 s:** sends a notification through the same path as Teams, so the app can be moved to the background first.
 - **Android app settings:** permissions and notifications for this app.
+- **Download diagnostics:** the last five downloads with status, reason code, bytes received and host.
 - **Call audio: switch to earpiece/loudspeaker** (Android 12+): Teams cannot select an audio output in WebView, so this switches between the earpiece and the loudspeaker.
 
 Pull-request test builds additionally allow WebView remote debugging via `chrome://inspect`.

@@ -4,20 +4,28 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.DownloadManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
+import android.database.Cursor;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Message;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.webkit.CookieManager;
+import android.webkit.MimeTypeMap;
 import android.webkit.ValueCallback;
 import android.webkit.PermissionRequest;
+import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -35,7 +43,20 @@ public final class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 3;
     // At most one picker is open; a recreated Activity starts with null, so a late result is dropped.
     private ValueCallback<Uri[]> fileChooserCallback;
+    // Reports the result of our own downloads, so a failure is not silent.
+    private final BroadcastReceiver downloadDone = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            reportDownload(intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1));
+        }
+    };
+    private final java.util.Set<Long> downloads = new java.util.HashSet<>();
+    // What each download was sent with: cookie and query parameter names only, never values.
+    private final java.util.Map<Long, String> downloadAuth = new java.util.HashMap<>();
     private WebView webView;
+    private WebView downloadHelper;
+    // Last SharePoint sign-in attempt: hosts, paths and status codes only (no query strings).
+    private final List<String> helperTrace = new ArrayList<>();
     private Notifications notifications;
     private boolean volumeUpDown;
     private boolean volumeDownDown;
@@ -91,6 +112,13 @@ public final class MainActivity extends Activity {
                 WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.notification_shim), OriginPolicy.teamsOrigins());
             }
         }
+
+        IntentFilter done = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        // Sent by the system download provider (another app), so the receiver must be exported.
+        // reportDownload ignores ids this app did not enqueue.
+        registerReceiver(downloadDone, done, Context.RECEIVER_EXPORTED);
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, length) ->
+                download(url, userAgent, contentDisposition, mimeType));
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -302,6 +330,213 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Teams/SharePoint attachments via Android's DownloadManager, with the WebView session cookie
+     * for that URL. DownloadManager shows progress, completion and failure in its own notification.
+     */
+    private void download(String url, String userAgent, String contentDisposition, String mimeType) {
+        if (OriginPolicy.isSharePoint(url)) {
+            downloadAfterSignIn(url);
+        } else {
+            enqueueDownload(url, userAgent, contentDisposition, mimeType);
+        }
+    }
+
+    /**
+     * SharePoint's session cookie (FedAuth) is set inside Teams' embedded, partitioned frame, so
+     * CookieManager cannot hand it to DownloadManager and SharePoint answers 401 (measured: only
+     * rtFa/SIMI were sent, no token in the URL). download.aspx itself answers a JSON 401 instead of
+     * redirecting to sign-in (measured in the hidden view), so the hidden WebView goes through
+     * SharePoint's Authenticate.aspx: Microsoft SSO sets a top-level FedAuth cookie and redirects
+     * back to the download, which then carries it. Same idea as Teams for Linux's hidden helpers.
+     */
+    private void downloadAfterSignIn(String url) {
+        closeDownloadHelper();
+        WebView helper = new WebView(this);
+        downloadHelper = helper;
+        WebSettings settings = helper.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setUserAgentString(webView.getSettings().getUserAgentString());
+        CookieManager.getInstance().setAcceptThirdPartyCookies(helper, true);
+        helperTrace.clear();
+        helper.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String u, android.graphics.Bitmap icon) {
+                trace("start " + hostAndPath(u));
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String u) {
+                trace("finished " + hostAndPath(u) + " title=" + view.getTitle());
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request,
+                    android.webkit.WebResourceResponse response) {
+                if (request.isForMainFrame()) {
+                    trace("http " + response.getStatusCode() + " " + hostAndPath(request.getUrl().toString()));
+                }
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, android.webkit.WebResourceError error) {
+                if (request.isForMainFrame()) {
+                    trace("error " + error.getErrorCode() + " " + error.getDescription());
+                }
+            }
+        });
+        helper.setDownloadListener((u, ua, cd, mime, length) -> {
+            trace("download " + mime + " " + hostAndPath(u));
+            enqueueDownload(u, ua, cd, mime);
+            webView.post(this::closeDownloadHelper);
+        });
+        // Timers go through the visible WebView: a detached view holds posted runnables until it is
+        // attached to a window, which the hidden helper never is.
+        // ponytail: fixed 30 s; an interactive sign-in (MFA prompt) cannot finish in a hidden view.
+        // No browser fallback: the file stays in the app.
+        webView.postDelayed(() -> {
+            if (downloadHelper == helper) {
+                trace("timeout after 30 s");
+                closeDownloadHelper();
+                Toast.makeText(this, R.string.download_sign_in_failed, Toast.LENGTH_LONG).show();
+            }
+        }, 30000);
+        Toast.makeText(this, R.string.download_signing_in, Toast.LENGTH_SHORT).show();
+        Uri uri = Uri.parse(url);
+        helper.loadUrl("https://" + uri.getHost() + "/_layouts/15/Authenticate.aspx?Source=" + Uri.encode(url));
+    }
+
+    private void trace(String line) {
+        // ponytail: keeps the last 12 events of the most recent attempt only.
+        if (helperTrace.size() >= 12) {
+            helperTrace.remove(0);
+        }
+        helperTrace.add(line);
+    }
+
+    private static String hostAndPath(String url) {
+        Uri uri = Uri.parse(url);
+        return uri.getHost() + uri.getPath();
+    }
+
+    private void closeDownloadHelper() {
+        if (downloadHelper != null) {
+            downloadHelper.stopLoading();
+            downloadHelper.destroy();
+            downloadHelper = null;
+        }
+    }
+
+    private void enqueueDownload(String url, String userAgent, String contentDisposition, String mimeType) {
+        Uri uri = Uri.parse(url);
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            // blob:/data: files are generated inside the page; DownloadManager cannot fetch them.
+            Toast.makeText(this, getString(R.string.download_unsupported, uri.getScheme()), Toast.LENGTH_LONG).show();
+            return;
+        }
+        // SharePoint/OneDrive serve files from .../download.aspx with the real name only in filename*=.
+        String name = FileName.fromContentDisposition(contentDisposition);
+        if (name == null) {
+            name = URLUtil.guessFileName(url, null, mimeType);
+        }
+        name = FileName.withExtension(name, MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType));
+        String cookies = CookieManager.getInstance().getCookie(url);
+        DownloadManager.Request request = new DownloadManager.Request(uri)
+                .addRequestHeader("Cookie", cookies)
+                .addRequestHeader("User-Agent", userAgent)
+                .setMimeType(mimeType)
+                .setTitle(name)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+        if (Build.VERSION.SDK_INT >= 29) {
+            // Public Downloads without a storage permission from Android 10 on.
+            // ponytail: Android 8-9 keep DownloadManager's own location (open via the notification);
+            // a public folder there would need WRITE_EXTERNAL_STORAGE.
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
+        }
+        long id = getSystemService(DownloadManager.class).enqueue(request);
+        downloads.add(id);
+        downloadAuth.put(id, "cookies=" + cookieNames(cookies) + "\nquery=" + uri.getQueryParameterNames()
+                + "\npath=" + uri.getPath());
+        Toast.makeText(this, getString(R.string.download_started, name), Toast.LENGTH_SHORT).show();
+    }
+
+    /** This app's DownloadManager entries (newest first), including pending and paused ones. */
+    private void showDownloads() {
+        StringBuilder out = new StringBuilder();
+        try (Cursor c = getSystemService(DownloadManager.class).query(new DownloadManager.Query())) {
+            int shown = 0;
+            while (c != null && c.moveToNext() && shown++ < 5) {
+                int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+                out.append(c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE)))
+                        .append("\nstatus=").append(statusName(status))
+                        .append(" reason=").append(c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)))
+                        .append("\nbytes=").append(c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)))
+                        .append('/').append(c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)))
+                        .append("\nhost=").append(Uri.parse(c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_URI))).getHost())
+                        .append("\nchanged=").append(new java.util.Date(
+                                c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP))));
+                String auth = downloadAuth.get(c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_ID)));
+                if (auth != null) {
+                    out.append('\n').append(auth);
+                }
+                out
+                        .append("\n\n");
+            }
+        }
+        if (!helperTrace.isEmpty()) {
+            out.append("SharePoint sign-in:\n").append(String.join("\n", helperTrace)).append("\n\n");
+        }
+        String text = out.length() == 0 ? "No downloads" : out.toString().trim();
+        show(new AlertDialog.Builder(this)
+                .setTitle(R.string.diagnostics_downloads)
+                .setMessage(text)
+                .setPositiveButton(R.string.diagnostics_copy, (d, w) -> getSystemService(ClipboardManager.class)
+                        .setPrimaryClip(ClipData.newPlainText("Download diagnostics", text)))
+                .setNegativeButton(R.string.diagnostics_close, null));
+    }
+
+    private static String cookieNames(String cookies) {
+        if (cookies == null || cookies.isEmpty()) {
+            return "none";
+        }
+        List<String> names = new ArrayList<>();
+        for (String pair : cookies.split(";")) {
+            names.add(pair.split("=", 2)[0].trim());
+        }
+        return names.toString();
+    }
+
+    private static String statusName(int status) {
+        switch (status) {
+            case DownloadManager.STATUS_PENDING: return "PENDING";
+            case DownloadManager.STATUS_RUNNING: return "RUNNING";
+            case DownloadManager.STATUS_PAUSED: return "PAUSED";
+            case DownloadManager.STATUS_SUCCESSFUL: return "SUCCESSFUL";
+            case DownloadManager.STATUS_FAILED: return "FAILED";
+            default: return String.valueOf(status);
+        }
+    }
+
+    private void reportDownload(long id) {
+        if (!downloads.remove(id)) {
+            return;
+        }
+        try (Cursor c = getSystemService(DownloadManager.class).query(new DownloadManager.Query().setFilterById(id))) {
+            if (c == null || !c.moveToFirst()) {
+                return;
+            }
+            int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+            String title = c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE));
+            String message = status == DownloadManager.STATUS_SUCCESSFUL
+                    ? getString(R.string.download_done, title)
+                    // Reason is the HTTP status (4xx/5xx) or a DownloadManager.ERROR_* code (1000+).
+                    : getString(R.string.download_failed, title,
+                            c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)));
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        }
+    }
+
     /** Hands http(s), mailto: and tel: links to Android; other schemes are dropped. */
     private void openExternally(String url) {
         if (!OriginPolicy.opensExternally(url)) {
@@ -400,6 +635,8 @@ public final class MainActivity extends Activity {
         });
         items.add(getString(R.string.diagnostics_app_settings));
         actions.add(this::openAppSettings);
+        items.add(getString(R.string.diagnostics_downloads));
+        actions.add(this::showDownloads);
         if (Build.VERSION.SDK_INT >= 31 && callAudio() != null) {
             items.add(getString(callAudio.onEarpiece() ? R.string.call_audio_to_speaker : R.string.call_audio_to_earpiece));
             actions.add(this::toggleCallAudio);
@@ -517,6 +754,8 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 31 && callAudio != null) {
             callAudio.restore();
         }
+        closeDownloadHelper();
+        unregisterReceiver(downloadDone);
         webView.destroy();
         super.onDestroy();
     }

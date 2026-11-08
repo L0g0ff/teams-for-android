@@ -7,6 +7,7 @@
     <string name="diagnostics_media">Media diagnostics</string>
     <string name="diagnostics_images">Image diagnostics</string>
     <string name="diagnostics_notification">Test notification in 10 s</string>
+    <string name="diagnostics_downloads">Download diagnostics</string>
     <string name="diagnostics_app_settings">Android app settings</string>
     <string name="diagnostics_copy">Copy</string>
     <string name="diagnostics_close">Close</string>
@@ -17,4 +18,10 @@
     <string name="call_audio_failed">Android did not accept the audio route</string>
     <string name="link_blocked">This link type is not opened for safety.</string>
     <string name="link_no_app">No app can open this link.</string>
+    <string name="download_started">Downloading %1$s</string>
+    <string name="download_unsupported">This download type (%1$s) is not supported yet.</string>
+    <string name="download_done">Saved to Downloads: %1$s</string>
+    <string name="download_failed">Download failed: %1$s (reason %2$d)</string>
+    <string name="download_signing_in">Preparing SharePoint download…</string>
+    <string name="download_sign_in_failed">SharePoint download failed: sign-in did not complete.</string>
 </resources>
