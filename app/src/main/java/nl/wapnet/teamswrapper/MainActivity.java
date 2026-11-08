@@ -81,6 +81,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         traceLifecycle("onCreate");
+        ConnectionService.start(this);
 
         WebView.setWebContentsDebuggingEnabled(getResources().getBoolean(R.bool.webview_debugging));
         webView = new WebView(this) {
@@ -811,6 +812,9 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         traceLifecycle("onDestroy");
+        if (isFinishing()) {
+            ConnectionService.stop(this);
+        }
         for (PermissionRequest request : pendingMediaRequests) {
             request.deny();
         }
