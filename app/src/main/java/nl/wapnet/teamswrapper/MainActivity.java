@@ -54,6 +54,7 @@ public final class MainActivity extends Activity {
     // What each download was sent with: cookie and query parameter names only, never values.
     private final java.util.Map<Long, String> downloadAuth = new java.util.HashMap<>();
     private WebView webView;
+    private WebView downloadHelper;
     private Notifications notifications;
     private boolean volumeUpDown;
     private boolean volumeDownDown;
@@ -332,6 +333,55 @@ public final class MainActivity extends Activity {
      * for that URL. DownloadManager shows progress, completion and failure in its own notification.
      */
     private void download(String url, String userAgent, String contentDisposition, String mimeType) {
+        if (OriginPolicy.isSharePoint(url)) {
+            downloadAfterSignIn(url);
+        } else {
+            enqueueDownload(url, userAgent, contentDisposition, mimeType);
+        }
+    }
+
+    /**
+     * SharePoint's session cookie (FedAuth) is set inside Teams' embedded, partitioned frame, so
+     * CookieManager cannot hand it to DownloadManager and SharePoint answers 401 (measured: only
+     * rtFa/SIMI were sent, no token in the URL). Loading the link top-level in a hidden WebView lets
+     * Microsoft SSO set a normal FedAuth cookie; the resulting download then carries it.
+     * Same idea as Teams for Linux's hidden helper windows for SharePoint downloads.
+     */
+    private void downloadAfterSignIn(String url) {
+        closeDownloadHelper();
+        WebView helper = new WebView(this);
+        downloadHelper = helper;
+        WebSettings settings = helper.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setUserAgentString(webView.getSettings().getUserAgentString());
+        helper.setWebViewClient(new WebViewClient());
+        helper.setDownloadListener((u, ua, cd, mime, length) -> {
+            enqueueDownload(u, ua, cd, mime);
+            helper.post(this::closeDownloadHelper);
+        });
+        // ponytail: fixed 30 s; an interactive sign-in (MFA prompt) cannot finish in a hidden view,
+        // so that case falls back to the browser like Teams for Linux's "blocked by policy?" path.
+        helper.postDelayed(() -> {
+            if (downloadHelper == helper) {
+                closeDownloadHelper();
+                Toast.makeText(this, R.string.download_open_in_browser, Toast.LENGTH_LONG).show();
+                openExternally(url);
+            }
+        }, 30000);
+        Toast.makeText(this, R.string.download_signing_in, Toast.LENGTH_SHORT).show();
+        helper.loadUrl(url);
+    }
+
+    private void closeDownloadHelper() {
+        if (downloadHelper != null) {
+            downloadHelper.stopLoading();
+            downloadHelper.destroy();
+            downloadHelper = null;
+        }
+    }
+
+    private void enqueueDownload(String url, String userAgent, String contentDisposition, String mimeType) {
         Uri uri = Uri.parse(url);
         if (!"https".equalsIgnoreCase(uri.getScheme())) {
             // blob:/data: files are generated inside the page; DownloadManager cannot fetch them.
@@ -654,6 +704,7 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 31 && callAudio != null) {
             callAudio.restore();
         }
+        closeDownloadHelper();
         unregisterReceiver(downloadDone);
         webView.destroy();
         super.onDestroy();

@@ -45,6 +45,18 @@ final class OriginPolicy {
         }
     }
 
+    /** HTTPS SharePoint/OneDrive for Business host (tenant.sharepoint.com, tenant-my.sharepoint.com). */
+    static boolean isSharePoint(String url) {
+        try {
+            URI uri = new URI(url);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            return "https".equals(uri.getScheme()) && uri.getRawUserInfo() == null
+                    && host.endsWith(".sharepoint.com");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /** Schemes safe to hand to Android (browser, mail, dialer). intent:, file:, javascript: etc. are not. */
     static boolean opensExternally(String url) {
         try {
@@ -143,6 +155,13 @@ final class OriginPolicy {
         assert !opensInApp("https://teams.microsoft.com:8443/");
         assert !opensInApp("https://contoso.sharepoint.com/file.docx");
         assert !opensInApp("not a uri");
+        assert isSharePoint("https://enableyourworld-my.sharepoint.com/personal/x/_layouts/15/download.aspx?UniqueId=1");
+        assert isSharePoint("https://Contoso.SharePoint.com/sites/a");
+        assert !isSharePoint("http://contoso.sharepoint.com/");
+        assert !isSharePoint("https://sharepoint.com.evil.example/");
+        assert !isSharePoint("https://evilsharepoint.com/");
+        assert !isSharePoint("https://contoso.sharepoint.com@evil.example/");
+        assert !isSharePoint("not a uri");
         assert opensExternally("https://example.com/page");
         assert opensExternally("http://example.com/");
         assert opensExternally("mailto:alice@example.com");
