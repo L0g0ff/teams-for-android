@@ -83,7 +83,14 @@ public final class MainActivity extends Activity {
         traceLifecycle("onCreate");
 
         WebView.setWebContentsDebuggingEnabled(getResources().getBoolean(R.bool.webview_debugging));
-        webView = new WebView(this);
+        webView = new WebView(this) {
+            @Override
+            protected void onWindowVisibilityChanged(int visibility) {
+                // Chromium freezes a hidden WebView after one minute. Keep its scheduler active;
+                // Activity diagnostics still records when Android backgrounds the app.
+                super.onWindowVisibilityChanged(android.view.View.VISIBLE);
+            }
+        };
         setContentView(webView);
 
         WebSettings settings = webView.getSettings();
