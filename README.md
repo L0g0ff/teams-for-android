@@ -51,6 +51,7 @@ Press **volume up and volume down together** to open a diagnostics menu:
 - **Image diagnostics:** images that failed to load on the current page (such as link-preview thumbnails), with the status a refetch returns.
 - **Test notification in 10 s:** sends a notification through the same path as Teams, so the app can be moved to the background first.
 - **Android app settings:** permissions and notifications for this app.
+- **Download diagnostics:** the last five downloads with status, reason code, bytes received and host.
 - **Call audio: switch to earpiece/loudspeaker** (Android 12+): Teams cannot select an audio output in WebView, so this switches between the earpiece and the loudspeaker.
 
 Pull-request test builds additionally allow WebView remote debugging via `chrome://inspect`.

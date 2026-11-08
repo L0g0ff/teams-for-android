@@ -7,6 +7,7 @@
     <string name="diagnostics_media">Media diagnostics</string>
     <string name="diagnostics_images">Image diagnostics</string>
     <string name="diagnostics_notification">Test notification in 10 s</string>
+    <string name="diagnostics_downloads">Download diagnostics</string>
     <string name="diagnostics_app_settings">Android app settings</string>
     <string name="diagnostics_copy">Copy</string>
     <string name="diagnostics_close">Close</string>

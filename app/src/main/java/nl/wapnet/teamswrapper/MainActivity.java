@@ -358,6 +358,44 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, getString(R.string.download_started, name), Toast.LENGTH_SHORT).show();
     }
 
+    /** This app's DownloadManager entries (newest first), including pending and paused ones. */
+    private void showDownloads() {
+        StringBuilder out = new StringBuilder();
+        try (Cursor c = getSystemService(DownloadManager.class).query(new DownloadManager.Query())) {
+            int shown = 0;
+            while (c != null && c.moveToNext() && shown++ < 5) {
+                int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+                out.append(c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE)))
+                        .append("\nstatus=").append(statusName(status))
+                        .append(" reason=").append(c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)))
+                        .append("\nbytes=").append(c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)))
+                        .append('/').append(c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)))
+                        .append("\nhost=").append(Uri.parse(c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_URI))).getHost())
+                        .append("\nchanged=").append(new java.util.Date(
+                                c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP))))
+                        .append("\n\n");
+            }
+        }
+        String text = out.length() == 0 ? "No downloads" : out.toString().trim();
+        show(new AlertDialog.Builder(this)
+                .setTitle(R.string.diagnostics_downloads)
+                .setMessage(text)
+                .setPositiveButton(R.string.diagnostics_copy, (d, w) -> getSystemService(ClipboardManager.class)
+                        .setPrimaryClip(ClipData.newPlainText("Download diagnostics", text)))
+                .setNegativeButton(R.string.diagnostics_close, null));
+    }
+
+    private static String statusName(int status) {
+        switch (status) {
+            case DownloadManager.STATUS_PENDING: return "PENDING";
+            case DownloadManager.STATUS_RUNNING: return "RUNNING";
+            case DownloadManager.STATUS_PAUSED: return "PAUSED";
+            case DownloadManager.STATUS_SUCCESSFUL: return "SUCCESSFUL";
+            case DownloadManager.STATUS_FAILED: return "FAILED";
+            default: return String.valueOf(status);
+        }
+    }
+
     private void reportDownload(long id) {
         if (!downloads.remove(id)) {
             return;
@@ -475,6 +513,8 @@ public final class MainActivity extends Activity {
         });
         items.add(getString(R.string.diagnostics_app_settings));
         actions.add(this::openAppSettings);
+        items.add(getString(R.string.diagnostics_downloads));
+        actions.add(this::showDownloads);
         if (Build.VERSION.SDK_INT >= 31 && callAudio() != null) {
             items.add(getString(callAudio.onEarpiece() ? R.string.call_audio_to_speaker : R.string.call_audio_to_earpiece));
             actions.add(this::toggleCallAudio);
