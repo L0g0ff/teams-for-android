@@ -49,6 +49,7 @@ Press **volume up and volume down together** to open a diagnostics menu:
 
 - **Media diagnostics:** camera/microphone permission state, capture test, device list and Android call-audio routing, with a Copy button for bug reports.
 - **Image diagnostics:** images that failed to load on the current page (such as link-preview thumbnails), with the status a refetch returns.
+- **Connection lifecycle:** Android lifecycle, WebView version, battery restrictions, page visibility/freezing and timer gaps, with a Copy button for background-notification reports.
 - **Test notification in 10 s:** sends a notification through the same path as Teams, so the app can be moved to the background first.
 - **Android app settings:** permissions and notifications for this app.
 - **Download diagnostics:** the last five downloads with status, reason code, bytes received and host.

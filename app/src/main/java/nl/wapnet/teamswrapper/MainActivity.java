@@ -58,6 +58,7 @@ public final class MainActivity extends Activity {
     // Last SharePoint sign-in attempt: hosts, paths and status codes only (no query strings).
     private final List<String> helperTrace = new ArrayList<>();
     private Notifications notifications;
+    private final List<String> lifecycleTrace = new ArrayList<>();
     private boolean volumeUpDown;
     private boolean volumeDownDown;
     private boolean probeRunning;
@@ -79,6 +80,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        traceLifecycle("onCreate");
 
         WebView.setWebContentsDebuggingEnabled(getResources().getBoolean(R.bool.webview_debugging));
         webView = new WebView(this);
@@ -104,6 +106,7 @@ public final class MainActivity extends Activity {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, MEDIA_PERMISSION_STATE_FIX, OriginPolicy.teamsOrigins());
             WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.preview_image_fix), OriginPolicy.teamsOrigins());
+            WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.lifecycle_diagnostics), OriginPolicy.teamsOrigins());
             if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
                 notifications = new Notifications(this);
                 // Origin-restricted by WebView itself: other sites never see the bridge object.
@@ -208,6 +211,12 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        traceLifecycle("onStart");
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         // singleTask: a link from another app reuses this Activity and its signed-in WebView.
@@ -223,6 +232,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        traceLifecycle("onResume");
         if (notifications != null) {
             notifications.clearAll();
         }
@@ -627,6 +637,8 @@ public final class MainActivity extends Activity {
         actions.add(() -> runProbe(MEDIA_PROBE, R.string.diagnostics_media, true));
         items.add(getString(R.string.diagnostics_images));
         actions.add(() -> runProbe(IMAGE_PROBE, R.string.diagnostics_images, false));
+        items.add(getString(R.string.diagnostics_connection));
+        actions.add(this::showConnectionDiagnostics);
         items.add(getString(R.string.diagnostics_notification));
         actions.add(() -> {
             // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
@@ -644,6 +656,50 @@ public final class MainActivity extends Activity {
         show(new AlertDialog.Builder(this)
                 .setTitle(R.string.diagnostics_title)
                 .setItems(items.toArray(new String[0]), (d, which) -> actions.get(which).run()));
+    }
+
+    private void showConnectionDiagnostics() {
+        webView.evaluateJavascript(
+                "window.__teamsLifecycleReport ? window.__teamsLifecycleReport() : 'Lifecycle script unavailable'",
+                json -> {
+                    String page;
+                    try {
+                        page = new org.json.JSONTokener(json).nextValue().toString();
+                    } catch (org.json.JSONException e) {
+                        page = json;
+                    }
+                    android.app.ActivityManager.RunningAppProcessInfo process =
+                            new android.app.ActivityManager.RunningAppProcessInfo();
+                    android.app.ActivityManager.getMyMemoryState(process);
+                    android.content.pm.PackageInfo provider = WebView.getCurrentWebViewPackage();
+                    boolean restricted = Build.VERSION.SDK_INT >= 28
+                            && getSystemService(android.app.ActivityManager.class).isBackgroundRestricted();
+                    boolean batteryExempt = getSystemService(android.os.PowerManager.class)
+                            .isIgnoringBatteryOptimizations(getPackageName());
+                    String text = "sdk=" + Build.VERSION.SDK_INT
+                            + "\nwebView=" + (provider == null ? "unknown" : provider.packageName + " " + provider.versionName)
+                            + "\nprocessImportance=" + process.importance
+                            + "\nbackgroundRestricted=" + restricted
+                            + "\nbatteryOptimizationExempt=" + batteryExempt
+                            + "\n\nActivity:\n" + String.join("\n", lifecycleTrace)
+                            + "\n\nPage:\n" + page;
+                    show(new AlertDialog.Builder(this)
+                            .setTitle(R.string.diagnostics_connection)
+                            .setMessage(text)
+                            .setPositiveButton(R.string.diagnostics_copy, (d, w) ->
+                                    getSystemService(ClipboardManager.class).setPrimaryClip(
+                                            ClipData.newPlainText("Connection diagnostics", text)))
+                            .setNegativeButton(R.string.diagnostics_close, null));
+                });
+    }
+
+    private void traceLifecycle(String event) {
+        // ponytail: the latest 20 callbacks cover one background/foreground reproduction.
+        if (lifecycleTrace.size() >= 20) {
+            lifecycleTrace.remove(0);
+        }
+        lifecycleTrace.add(new java.util.Date() + " elapsed="
+                + android.os.SystemClock.elapsedRealtime() + "ms " + event);
     }
 
     /** Null on Android 11 and older, and on devices without an earpiece. */
@@ -734,12 +790,20 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        traceLifecycle("onPause");
         CookieManager.getInstance().flush();
         super.onPause();
     }
 
     @Override
+    protected void onStop() {
+        traceLifecycle("onStop");
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
+        traceLifecycle("onDestroy");
         for (PermissionRequest request : pendingMediaRequests) {
             request.deny();
         }
