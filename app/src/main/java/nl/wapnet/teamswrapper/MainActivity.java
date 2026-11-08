@@ -51,6 +51,8 @@ public final class MainActivity extends Activity {
         }
     };
     private final java.util.Set<Long> downloads = new java.util.HashSet<>();
+    // What each download was sent with: cookie and query parameter names only, never values.
+    private final java.util.Map<Long, String> downloadAuth = new java.util.HashMap<>();
     private WebView webView;
     private Notifications notifications;
     private boolean volumeUpDown;
@@ -342,8 +344,9 @@ public final class MainActivity extends Activity {
             name = URLUtil.guessFileName(url, null, mimeType);
         }
         name = FileName.withExtension(name, MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType));
+        String cookies = CookieManager.getInstance().getCookie(url);
         DownloadManager.Request request = new DownloadManager.Request(uri)
-                .addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url))
+                .addRequestHeader("Cookie", cookies)
                 .addRequestHeader("User-Agent", userAgent)
                 .setMimeType(mimeType)
                 .setTitle(name)
@@ -354,7 +357,10 @@ public final class MainActivity extends Activity {
             // a public folder there would need WRITE_EXTERNAL_STORAGE.
             request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
         }
-        downloads.add(getSystemService(DownloadManager.class).enqueue(request));
+        long id = getSystemService(DownloadManager.class).enqueue(request);
+        downloads.add(id);
+        downloadAuth.put(id, "cookies=" + cookieNames(cookies) + "\nquery=" + uri.getQueryParameterNames()
+                + "\npath=" + uri.getPath());
         Toast.makeText(this, getString(R.string.download_started, name), Toast.LENGTH_SHORT).show();
     }
 
@@ -372,7 +378,12 @@ public final class MainActivity extends Activity {
                         .append('/').append(c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)))
                         .append("\nhost=").append(Uri.parse(c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_URI))).getHost())
                         .append("\nchanged=").append(new java.util.Date(
-                                c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP))))
+                                c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP))));
+                String auth = downloadAuth.get(c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_ID)));
+                if (auth != null) {
+                    out.append('\n').append(auth);
+                }
+                out
                         .append("\n\n");
             }
         }
@@ -383,6 +394,17 @@ public final class MainActivity extends Activity {
                 .setPositiveButton(R.string.diagnostics_copy, (d, w) -> getSystemService(ClipboardManager.class)
                         .setPrimaryClip(ClipData.newPlainText("Download diagnostics", text)))
                 .setNegativeButton(R.string.diagnostics_close, null));
+    }
+
+    private static String cookieNames(String cookies) {
+        if (cookies == null || cookies.isEmpty()) {
+            return "none";
+        }
+        List<String> names = new ArrayList<>();
+        for (String pair : cookies.split(";")) {
+            names.add(pair.split("=", 2)[0].trim());
+        }
+        return names.toString();
     }
 
     private static String statusName(int status) {
