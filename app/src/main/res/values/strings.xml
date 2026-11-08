@@ -23,5 +23,5 @@
     <string name="download_done">Saved to Downloads: %1$s</string>
     <string name="download_failed">Download failed: %1$s (reason %2$d)</string>
     <string name="download_signing_in">Preparing SharePoint download…</string>
-    <string name="download_open_in_browser">SharePoint needs a sign-in for this file. Opening it in the browser.</string>
+    <string name="download_sign_in_failed">SharePoint download failed: sign-in did not complete.</string>
 </resources>

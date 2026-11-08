@@ -345,9 +345,10 @@ public final class MainActivity extends Activity {
     /**
      * SharePoint's session cookie (FedAuth) is set inside Teams' embedded, partitioned frame, so
      * CookieManager cannot hand it to DownloadManager and SharePoint answers 401 (measured: only
-     * rtFa/SIMI were sent, no token in the URL). Loading the link top-level in a hidden WebView lets
-     * Microsoft SSO set a normal FedAuth cookie; the resulting download then carries it.
-     * Same idea as Teams for Linux's hidden helper windows for SharePoint downloads.
+     * rtFa/SIMI were sent, no token in the URL). download.aspx itself answers a JSON 401 instead of
+     * redirecting to sign-in (measured in the hidden view), so the hidden WebView goes through
+     * SharePoint's Authenticate.aspx: Microsoft SSO sets a top-level FedAuth cookie and redirects
+     * back to the download, which then carries it. Same idea as Teams for Linux's hidden helpers.
      */
     private void downloadAfterSignIn(String url) {
         closeDownloadHelper();
@@ -392,18 +393,18 @@ public final class MainActivity extends Activity {
         });
         // Timers go through the visible WebView: a detached view holds posted runnables until it is
         // attached to a window, which the hidden helper never is.
-        // ponytail: fixed 30 s; an interactive sign-in (MFA prompt) cannot finish in a hidden view,
-        // so that case falls back to the browser like Teams for Linux's "blocked by policy?" path.
+        // ponytail: fixed 30 s; an interactive sign-in (MFA prompt) cannot finish in a hidden view.
+        // No browser fallback: the file stays in the app.
         webView.postDelayed(() -> {
             if (downloadHelper == helper) {
-                trace("timeout after 30 s, opened in browser");
+                trace("timeout after 30 s");
                 closeDownloadHelper();
-                Toast.makeText(this, R.string.download_open_in_browser, Toast.LENGTH_LONG).show();
-                openExternally(url);
+                Toast.makeText(this, R.string.download_sign_in_failed, Toast.LENGTH_LONG).show();
             }
         }, 30000);
         Toast.makeText(this, R.string.download_signing_in, Toast.LENGTH_SHORT).show();
-        helper.loadUrl(url);
+        Uri uri = Uri.parse(url);
+        helper.loadUrl("https://" + uri.getHost() + "/_layouts/15/Authenticate.aspx?Source=" + Uri.encode(url));
     }
 
     private void trace(String line) {
