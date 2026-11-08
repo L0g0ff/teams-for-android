@@ -55,6 +55,8 @@ public final class MainActivity extends Activity {
     private final java.util.Map<Long, String> downloadAuth = new java.util.HashMap<>();
     private WebView webView;
     private WebView downloadHelper;
+    // Last SharePoint sign-in attempt: hosts, paths and status codes only (no query strings).
+    private final List<String> helperTrace = new ArrayList<>();
     private Notifications notifications;
     private boolean volumeUpDown;
     private boolean volumeDownDown;
@@ -355,15 +357,46 @@ public final class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setUserAgentString(webView.getSettings().getUserAgentString());
-        helper.setWebViewClient(new WebViewClient());
-        helper.setDownloadListener((u, ua, cd, mime, length) -> {
-            enqueueDownload(u, ua, cd, mime);
-            helper.post(this::closeDownloadHelper);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(helper, true);
+        helperTrace.clear();
+        helper.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String u, android.graphics.Bitmap icon) {
+                trace("start " + hostAndPath(u));
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String u) {
+                trace("finished " + hostAndPath(u) + " title=" + view.getTitle());
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request,
+                    android.webkit.WebResourceResponse response) {
+                if (request.isForMainFrame()) {
+                    trace("http " + response.getStatusCode() + " " + hostAndPath(request.getUrl().toString()));
+                }
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, android.webkit.WebResourceError error) {
+                if (request.isForMainFrame()) {
+                    trace("error " + error.getErrorCode() + " " + error.getDescription());
+                }
+            }
         });
+        helper.setDownloadListener((u, ua, cd, mime, length) -> {
+            trace("download " + mime + " " + hostAndPath(u));
+            enqueueDownload(u, ua, cd, mime);
+            webView.post(this::closeDownloadHelper);
+        });
+        // Timers go through the visible WebView: a detached view holds posted runnables until it is
+        // attached to a window, which the hidden helper never is.
         // ponytail: fixed 30 s; an interactive sign-in (MFA prompt) cannot finish in a hidden view,
         // so that case falls back to the browser like Teams for Linux's "blocked by policy?" path.
-        helper.postDelayed(() -> {
+        webView.postDelayed(() -> {
             if (downloadHelper == helper) {
+                trace("timeout after 30 s, opened in browser");
                 closeDownloadHelper();
                 Toast.makeText(this, R.string.download_open_in_browser, Toast.LENGTH_LONG).show();
                 openExternally(url);
@@ -371,6 +404,19 @@ public final class MainActivity extends Activity {
         }, 30000);
         Toast.makeText(this, R.string.download_signing_in, Toast.LENGTH_SHORT).show();
         helper.loadUrl(url);
+    }
+
+    private void trace(String line) {
+        // ponytail: keeps the last 12 events of the most recent attempt only.
+        if (helperTrace.size() >= 12) {
+            helperTrace.remove(0);
+        }
+        helperTrace.add(line);
+    }
+
+    private static String hostAndPath(String url) {
+        Uri uri = Uri.parse(url);
+        return uri.getHost() + uri.getPath();
     }
 
     private void closeDownloadHelper() {
@@ -436,6 +482,9 @@ public final class MainActivity extends Activity {
                 out
                         .append("\n\n");
             }
+        }
+        if (!helperTrace.isEmpty()) {
+            out.append("SharePoint sign-in:\n").append(String.join("\n", helperTrace)).append("\n\n");
         }
         String text = out.length() == 0 ? "No downloads" : out.toString().trim();
         show(new AlertDialog.Builder(this)
