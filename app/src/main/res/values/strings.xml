@@ -9,7 +9,6 @@
     <string name="diagnostics_title">Diagnostics</string>
     <string name="diagnostics_media">Media diagnostics</string>
     <string name="diagnostics_images">Image diagnostics</string>
-    <string name="diagnostics_connection">Connection lifecycle</string>
     <string name="diagnostics_notification">Test notification in 10 s</string>
     <string name="diagnostics_downloads">Download diagnostics</string>
     <string name="diagnostics_app_settings">Android app settings</string>
