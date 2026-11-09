@@ -2,12 +2,24 @@
 (() => {
   const bridge = () => window.TeamsAndroid;
   const live = new Map();
+  const diagnostics = window.__teamsNotificationDiagnostics = {
+    permissionReads: 0,
+    permissionRequests: 0,
+    permissionQueries: 0,
+    created: 0,
+    bridgeSent: 0,
+    bridgeMissing: 0,
+    last: null,
+  };
   let nextId = 0;
   let listening = false;
 
   const send = (message) => {
     const b = bridge();
-    if (!b) return false;
+    if (!b) {
+      diagnostics.bridgeMissing++;
+      return false;
+    }
     if (!listening) {
       listening = true;
       // Android reports a tapped notification by its id; Teams opens the chat from onclick.
@@ -17,12 +29,18 @@
       });
     }
     b.postMessage(JSON.stringify(message));
+    diagnostics.bridgeSent++;
     return true;
   };
 
   class AndroidNotification extends EventTarget {
     constructor(title, options = {}) {
       super();
+      diagnostics.created++;
+      diagnostics.last = {
+        visibility: document.visibilityState,
+        focus: document.hasFocus(),
+      };
       this.id = ++nextId;
       this.title = String(title);
       this.body = String(options.body || '');
@@ -47,9 +65,13 @@
       if (live.delete(this.id)) this.dispatchEvent(new Event('close'));
     }
 
-    static get permission() { return 'granted'; }
+    static get permission() {
+      diagnostics.permissionReads++;
+      return 'granted';
+    }
     static get maxActions() { return 0; }
     static requestPermission(callback) {
+      diagnostics.permissionRequests++;
       if (typeof callback === 'function') callback('granted');
       return Promise.resolve('granted');
     }
@@ -62,7 +84,10 @@
   if (permissions && permissions.query) {
     const query = permissions.query.bind(permissions);
     permissions.query = (d) => query(d).then((s) => {
-      if (d && d.name === 'notifications') Object.defineProperty(s, 'state', { value: 'granted' });
+      if (d && d.name === 'notifications') {
+        diagnostics.permissionQueries++;
+        Object.defineProperty(s, 'state', { value: 'granted' });
+      }
       return s;
     });
   }

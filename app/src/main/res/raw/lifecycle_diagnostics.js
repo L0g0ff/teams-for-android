@@ -29,6 +29,7 @@
     online: navigator.onLine,
     focus: document.hasFocus(),
     discarded: document.wasDiscarded,
+    notifications: window.__teamsNotificationDiagnostics || null,
     events,
   }, null, 1);
   record('script-start');
