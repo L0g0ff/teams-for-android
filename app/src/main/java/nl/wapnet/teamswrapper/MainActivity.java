@@ -696,8 +696,6 @@ public final class MainActivity extends Activity {
                             + "\nprocessImportance=" + process.importance
                             + "\nbackgroundRestricted=" + restricted
                             + "\nbatteryOptimizationExempt=" + batteryExempt
-                            + "\nnotificationNative=" + (notifications == null
-                                    ? "unavailable" : notifications.diagnostics())
                             + "\n\nActivity:\n" + String.join("\n", lifecycleTrace)
                             + "\n\nPage:\n" + page;
                     show(new AlertDialog.Builder(this)

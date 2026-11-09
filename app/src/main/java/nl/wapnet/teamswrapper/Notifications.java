@@ -27,10 +27,6 @@ final class Notifications {
     private final Activity activity;
     private final NotificationManager manager;
     private JavaScriptReplyProxy page;
-    private int received;
-    private int submitted;
-    private int permissionDenied;
-    private int invalid;
 
     Notifications(Activity activity) {
         this.activity = activity;
@@ -51,10 +47,8 @@ final class Notifications {
     }
 
     void show(String json, JavaScriptReplyProxy reply) {
-        received++;
         page = reply;
         if (!allowed()) {
-            permissionDenied++;
             return;
         }
         int id;
@@ -66,7 +60,6 @@ final class Notifications {
             title = clip(message.optString("title"));
             body = clip(message.optString("body"));
         } catch (JSONException e) {
-            invalid++;
             return;
         }
         Intent open = new Intent(activity, MainActivity.class)
@@ -83,12 +76,6 @@ final class Notifications {
                 .setContentIntent(tap)
                 .setAutoCancel(true)
                 .build());
-        submitted++;
-    }
-
-    String diagnostics() {
-        return "received=" + received + " submitted=" + submitted
-                + " permissionDenied=" + permissionDenied + " invalid=" + invalid;
     }
 
     /** Lets Teams open the chat that belongs to the tapped notification. */

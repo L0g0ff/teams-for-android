@@ -4,7 +4,6 @@ const fs = require('node:fs');
 const posted = [];
 let reply;
 globalThis.window = globalThis;
-globalThis.document = { hidden: true, visibilityState: 'hidden', hasFocus: () => false };
 class PermissionStatus { get state() { return 'denied'; } }
 Object.defineProperty(globalThis, 'navigator', { value: { permissions: { query: async () => new PermissionStatus() } } });
 window.TeamsAndroid = {
@@ -44,14 +43,5 @@ eval(fs.readFileSync(__dirname + '/../app/src/main/res/raw/notification_shim.js'
   new Notification('x').onerror = () => { errored = true; };
   await new Promise((r) => setTimeout(r, 1));
   assert.ok(errored, 'missing bridge must raise error');
-  assert.deepEqual(window.__teamsNotificationDiagnostics, {
-    permissionReads: 1,
-    permissionRequests: 1,
-    permissionQueries: 1,
-    created: 2,
-    bridgeSent: 1,
-    bridgeMissing: 1,
-    last: { visibility: 'hidden', focus: false },
-  });
   console.log('NOTIFICATION_SHIM_OK');
 })();

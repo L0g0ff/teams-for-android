@@ -9,7 +9,6 @@ class FakeDocument extends EventTarget {
 }
 
 globalThis.window = new EventTarget();
-window.__teamsNotificationDiagnostics = { created: 2, bridgeSent: 1 };
 globalThis.document = new FakeDocument();
 Object.defineProperty(globalThis, 'navigator', {
   value: { onLine: true },
@@ -23,7 +22,6 @@ eval(fs.readFileSync(__dirname + '/../app/src/main/res/raw/lifecycle_diagnostics
 let report = JSON.parse(window.__teamsLifecycleReport());
 assert.equal(report.visibility, 'visible');
 assert.equal(report.online, true);
-assert.deepEqual(report.notifications, { created: 2, bridgeSent: 1 });
 assert.equal(report.events.length, 1);
 assert.match(report.events[0], /script-start/);
 
