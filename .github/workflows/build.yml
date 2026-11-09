@@ -19,6 +19,8 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
       - run: node scripts/check-notification-shim.js
+      - run: node scripts/check-background-service.js
+      - run: node scripts/check-background-visibility.js
       - run: node scripts/check-preview-image-fix.js
       - run: ./gradlew lintDebug assembleRelease
 

@@ -58,6 +58,7 @@ public final class MainActivity extends Activity {
     // Last SharePoint sign-in attempt: hosts, paths and status codes only (no query strings).
     private final List<String> helperTrace = new ArrayList<>();
     private Notifications notifications;
+    private final BackgroundVisibility backgroundVisibility = new BackgroundVisibility();
     private boolean volumeUpDown;
     private boolean volumeDownDown;
     private boolean probeRunning;
@@ -79,9 +80,17 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        ConnectionService.start(this);
 
         WebView.setWebContentsDebuggingEnabled(getResources().getBoolean(R.bool.webview_debugging));
-        webView = new WebView(this);
+        webView = new WebView(this) {
+            @Override
+            protected void onWindowVisibilityChanged(int visibility) {
+                // Chromium freezes a hidden WebView after one minute. Keep its scheduler active;
+                // Teams still receives the real Activity background state through BackgroundVisibility.
+                super.onWindowVisibilityChanged(android.view.View.VISIBLE);
+            }
+        };
         setContentView(webView);
 
         WebSettings settings = webView.getSettings();
@@ -105,6 +114,11 @@ public final class MainActivity extends Activity {
             WebViewCompat.addDocumentStartJavaScript(webView, MEDIA_PERMISSION_STATE_FIX, OriginPolicy.teamsOrigins());
             WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.preview_image_fix), OriginPolicy.teamsOrigins());
             if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+                WebViewCompat.addWebMessageListener(webView, BackgroundVisibility.BRIDGE,
+                        OriginPolicy.teamsOrigins(), (view, message, origin, isMainFrame, reply) ->
+                                backgroundVisibility.connected(message.getData(), isMainFrame, reply));
+                WebViewCompat.addDocumentStartJavaScript(webView, rawScript(R.raw.background_visibility),
+                        OriginPolicy.teamsOrigins());
                 notifications = new Notifications(this);
                 // Origin-restricted by WebView itself: other sites never see the bridge object.
                 WebViewCompat.addWebMessageListener(webView, Notifications.BRIDGE, OriginPolicy.teamsOrigins(),
@@ -207,6 +221,7 @@ public final class MainActivity extends Activity {
         webView.loadUrl(link != null ? link : TEAMS_URL);
     }
 
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -223,6 +238,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        backgroundVisibility.setBackgrounded(false);
         if (notifications != null) {
             notifications.clearAll();
         }
@@ -646,6 +662,7 @@ public final class MainActivity extends Activity {
                 .setItems(items.toArray(new String[0]), (d, which) -> actions.get(which).run()));
     }
 
+
     /** Null on Android 11 and older, and on devices without an earpiece. */
     private CallAudio callAudio() {
         if (Build.VERSION.SDK_INT < 31) {
@@ -734,12 +751,16 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        backgroundVisibility.setBackgrounded(true);
         CookieManager.getInstance().flush();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
+        if (isFinishing()) {
+            ConnectionService.stop(this);
+        }
         for (PermissionRequest request : pendingMediaRequests) {
             request.deny();
         }
