@@ -27,20 +27,28 @@ import android.webkit.CookieManager;
 import android.webkit.MimeTypeMap;
 import android.webkit.ValueCallback;
 import android.webkit.PermissionRequest;
+import android.webkit.ServiceWorkerClient;
+import android.webkit.ServiceWorkerController;
 import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
+import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import androidx.webkit.WebStorageCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 public final class MainActivity extends Activity {
     private static final String TEAMS_URL = "https://teams.cloud.microsoft/";
+    private static final String SERVICE_WORKER_CLEARED = "service_worker_cleared";
     private static final int MEDIA_PERMISSION_REQUEST = 1;
     private static final int FILE_CHOOSER_REQUEST = 3;
     // At most one picker is open; a recreated Activity starts with null, so a late result is dropped.
@@ -86,6 +94,20 @@ public final class MainActivity extends Activity {
         ConnectionService.start(this);
 
         WebView.setWebContentsDebuggingEnabled(getResources().getBoolean(R.bool.webview_debugging));
+        byte[] noOpWorker = rawScript(R.raw.noop_service_worker).getBytes(StandardCharsets.UTF_8);
+        ServiceWorkerController.getInstance().setServiceWorkerClient(new ServiceWorkerClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebResourceRequest request) {
+                Uri url = request.getUrl();
+                if ("https".equalsIgnoreCase(url.getScheme())
+                        && "teams.cloud.microsoft".equalsIgnoreCase(url.getHost())
+                        && "/serviceworker.js".equals(url.getPath())) {
+                    return new WebResourceResponse("application/javascript", "UTF-8",
+                            new ByteArrayInputStream(noOpWorker));
+                }
+                return null;
+            }
+        });
         webView = new WebView(this);
         setContentView(webView);
 
@@ -220,7 +242,24 @@ public final class MainActivity extends Activity {
             }
         });
         String link = OriginPolicy.deepLink(getIntent().getDataString());
-        webView.loadUrl(link != null ? link : TEAMS_URL);
+        String initialUrl = link != null ? link : TEAMS_URL;
+        if (!clearBrokenServiceWorker(initialUrl)) {
+            webView.loadUrl(initialUrl);
+        }
+    }
+
+    private boolean clearBrokenServiceWorker(String initialUrl) {
+        if (getPreferences(MODE_PRIVATE).getBoolean(SERVICE_WORKER_CLEARED, false)
+                || !WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA)) {
+            return false;
+        }
+        WebStorageCompat.deleteBrowsingDataForSite(WebStorage.getInstance(), TEAMS_URL, () -> {
+            getPreferences(MODE_PRIVATE).edit().putBoolean(SERVICE_WORKER_CLEARED, true).apply();
+            if (!isDestroyed()) {
+                webView.loadUrl(initialUrl);
+            }
+        });
+        return true;
     }
 
 
