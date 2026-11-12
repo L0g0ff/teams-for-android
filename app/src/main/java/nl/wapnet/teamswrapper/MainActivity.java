@@ -15,6 +15,8 @@ import android.database.Cursor;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -28,6 +30,7 @@ import android.webkit.PermissionRequest;
 import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceError;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -59,6 +62,7 @@ public final class MainActivity extends Activity {
     private final List<String> helperTrace = new ArrayList<>();
     private Notifications notifications;
     private final BackgroundVisibility backgroundVisibility = new BackgroundVisibility();
+    private String lastMainFrameError = "none";
     private boolean volumeUpDown;
     private boolean volumeDownDown;
     private boolean probeRunning;
@@ -135,6 +139,15 @@ public final class MainActivity extends Activity {
                 download(url, userAgent, contentDisposition, mimeType));
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) {
+                    lastMainFrameError = "code=" + error.getErrorCode()
+                            + " description=" + error.getDescription()
+                            + " url=" + hostAndPath(request.getUrl().toString());
+                }
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
@@ -643,6 +656,8 @@ public final class MainActivity extends Activity {
         actions.add(() -> runProbe(MEDIA_PROBE, R.string.diagnostics_media, true));
         items.add(getString(R.string.diagnostics_images));
         actions.add(() -> runProbe(IMAGE_PROBE, R.string.diagnostics_images, false));
+        items.add(getString(R.string.diagnostics_connection));
+        actions.add(this::showConnectionDiagnostics);
         items.add(getString(R.string.diagnostics_notification));
         actions.add(() -> {
             // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
@@ -660,6 +675,47 @@ public final class MainActivity extends Activity {
         show(new AlertDialog.Builder(this)
                 .setTitle(R.string.diagnostics_title)
                 .setItems(items.toArray(new String[0]), (d, which) -> actions.get(which).run()));
+    }
+
+    private void showConnectionDiagnostics() {
+        android.content.pm.PackageInfo provider = WebView.getCurrentWebViewPackage();
+        String text = "app=" + appVersion()
+                + "\nandroid=" + Build.VERSION.RELEASE + " api=" + Build.VERSION.SDK_INT
+                + "\nwebView=" + (provider == null
+                        ? "unavailable" : provider.packageName + " " + provider.versionName)
+                + "\n" + networkReport()
+                + "\nlastMainFrameError=" + lastMainFrameError;
+        show(new AlertDialog.Builder(this)
+                .setTitle(R.string.diagnostics_connection)
+                .setMessage(text)
+                .setPositiveButton(R.string.diagnostics_copy, (d, w) ->
+                        getSystemService(ClipboardManager.class).setPrimaryClip(
+                                ClipData.newPlainText("Connection diagnostics", text)))
+                .setNegativeButton(R.string.diagnostics_close, null));
+    }
+
+    private String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (PackageManager.NameNotFoundException e) {
+            return "unknown";
+        }
+    }
+
+    private String networkReport() {
+        ConnectivityManager manager = getSystemService(ConnectivityManager.class);
+        NetworkCapabilities capabilities = manager.getNetworkCapabilities(manager.getActiveNetwork());
+        if (capabilities == null) {
+            return "network=unavailable";
+        }
+        List<String> transports = new ArrayList<>();
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) transports.add("wifi");
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) transports.add("cellular");
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) transports.add("ethernet");
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) transports.add("vpn");
+        return "network=" + (transports.isEmpty() ? "other" : String.join(",", transports))
+                + " internet=" + capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                + " validated=" + capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
     }
 
 
