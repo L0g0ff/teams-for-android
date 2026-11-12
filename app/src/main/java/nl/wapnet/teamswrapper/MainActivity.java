@@ -86,14 +86,7 @@ public final class MainActivity extends Activity {
         ConnectionService.start(this);
 
         WebView.setWebContentsDebuggingEnabled(getResources().getBoolean(R.bool.webview_debugging));
-        webView = new WebView(this) {
-            @Override
-            protected void onWindowVisibilityChanged(int visibility) {
-                // Chromium freezes a hidden WebView after one minute. Keep its scheduler active;
-                // Teams still receives the real Activity background state through BackgroundVisibility.
-                super.onWindowVisibilityChanged(android.view.View.VISIBLE);
-            }
-        };
+        webView = new WebView(this);
         setContentView(webView);
 
         WebSettings settings = webView.getSettings();

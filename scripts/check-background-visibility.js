@@ -1,6 +1,11 @@
 const fs = require('fs');
 const vm = require('vm');
 const source = fs.readFileSync(`${__dirname}/../app/src/main/res/raw/background_visibility.js`, 'utf8');
+const activity = fs.readFileSync(`${__dirname}/../app/src/main/java/nl/wapnet/teamswrapper/MainActivity.java`, 'utf8');
+
+if (activity.includes('super.onWindowVisibilityChanged(android.view.View.VISIBLE)')) {
+  throw new Error('Activity must not falsify WebView window visibility');
+}
 
 class Events extends EventTarget {
   constructor() {
