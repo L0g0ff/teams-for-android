@@ -10,7 +10,7 @@ if (!manifest.includes('android.permission.ACCESS_NETWORK_STATE')) {
 for (const expected of [
   'diagnostics_connection',
   'showConnectionDiagnostics',
-  'request.isForMainFrame()',
+  'public void onReceivedError(WebView view, int errorCode, String description, String failingUrl)',
   'lastMainFrameError =',
   'WebView.getCurrentWebViewPackage()',
   'getActiveNetwork()',
@@ -19,10 +19,17 @@ for (const expected of [
 ]) {
   if (!activity.includes(expected)) throw new Error(`connection diagnostics missing ${expected}`);
 }
-if (!activity.includes('hostAndPath(request.getUrl().toString())')) {
+if (!activity.includes('hostAndPath(url)')) {
   throw new Error('main-frame error URL must omit query parameters');
 }
-if (activity.includes('onPageStarted(WebView view, String url') && activity.includes('lastMainFrameError = "none"')) {
+const mainClient = activity.slice(
+  activity.indexOf('webView.setWebViewClient'),
+  activity.indexOf('webView.setWebChromeClient'),
+);
+if (mainClient.includes('public void onReceivedError(WebView view, WebResourceRequest request')) {
+  throw new Error('modern override bypasses WebViewClient forwarding to the main-frame callback');
+}
+if (mainClient.includes('onPageStarted(WebView view, String url') && mainClient.includes('lastMainFrameError = "none"')) {
   throw new Error('latest main-frame error is reset on navigation');
 }
 console.log('CONNECTION_DIAGNOSTICS_OK');

@@ -30,7 +30,6 @@ import android.webkit.PermissionRequest;
 import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceError;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -140,12 +139,9 @@ public final class MainActivity extends Activity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) {
-                    lastMainFrameError = "code=" + error.getErrorCode()
-                            + " description=" + error.getDescription()
-                            + " url=" + hostAndPath(request.getUrl().toString());
-                }
+            @SuppressWarnings("deprecation")
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                recordMainFrameError(errorCode, description, failingUrl);
             }
 
             @Override
@@ -692,6 +688,11 @@ public final class MainActivity extends Activity {
                         getSystemService(ClipboardManager.class).setPrimaryClip(
                                 ClipData.newPlainText("Connection diagnostics", text)))
                 .setNegativeButton(R.string.diagnostics_close, null));
+    }
+
+    private void recordMainFrameError(int code, String description, String url) {
+        lastMainFrameError = "code=" + code + " description=" + description
+                + " url=" + hostAndPath(url);
     }
 
     private String appVersion() {
