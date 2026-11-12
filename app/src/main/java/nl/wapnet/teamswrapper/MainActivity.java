@@ -15,8 +15,6 @@ import android.database.Cursor;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
-import android.net.ConnectivityManager;
-import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -69,7 +67,7 @@ public final class MainActivity extends Activity {
     private final List<String> helperTrace = new ArrayList<>();
     private Notifications notifications;
     private final BackgroundVisibility backgroundVisibility = new BackgroundVisibility();
-    private String lastMainFrameError = "none";
+    private String pendingLoadUrl;
     private boolean volumeUpDown;
     private boolean volumeDownDown;
     private boolean probeRunning;
@@ -108,7 +106,14 @@ public final class MainActivity extends Activity {
                 return null;
             }
         });
-        webView = new WebView(this);
+        webView = new WebView(this) {
+            @Override
+            protected void onWindowVisibilityChanged(int visibility) {
+                // Chromium freezes a hidden WebView after one minute. Keep its scheduler active;
+                // Teams still receives the real Activity background state through BackgroundVisibility.
+                super.onWindowVisibilityChanged(android.view.View.VISIBLE);
+            }
+        };
         setContentView(webView);
 
         WebSettings settings = webView.getSettings();
@@ -153,12 +158,6 @@ public final class MainActivity extends Activity {
                 download(url, userAgent, contentDisposition, mimeType));
 
         webView.setWebViewClient(new WebViewClient() {
-            @Override
-            @SuppressWarnings("deprecation")
-            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                recordMainFrameError(errorCode, description, failingUrl);
-            }
-
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
@@ -253,10 +252,13 @@ public final class MainActivity extends Activity {
                 || !WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA)) {
             return false;
         }
+        pendingLoadUrl = initialUrl;
         WebStorageCompat.deleteBrowsingDataForSite(WebStorage.getInstance(), TEAMS_URL, () -> {
             getPreferences(MODE_PRIVATE).edit().putBoolean(SERVICE_WORKER_CLEARED, true).apply();
+            String url = pendingLoadUrl;
+            pendingLoadUrl = null;
             if (!isDestroyed()) {
-                webView.loadUrl(initialUrl);
+                webView.loadUrl(url);
             }
         });
         return true;
@@ -269,7 +271,11 @@ public final class MainActivity extends Activity {
         // singleTask: a link from another app reuses this Activity and its signed-in WebView.
         String link = OriginPolicy.deepLink(intent.getDataString());
         if (link != null) {
-            webView.loadUrl(link);
+            if (pendingLoadUrl != null) {
+                pendingLoadUrl = link;
+            } else {
+                webView.loadUrl(link);
+            }
         }
         if (notifications != null) {
             notifications.clicked(intent);
@@ -684,8 +690,6 @@ public final class MainActivity extends Activity {
         actions.add(() -> runProbe(MEDIA_PROBE, R.string.diagnostics_media, true));
         items.add(getString(R.string.diagnostics_images));
         actions.add(() -> runProbe(IMAGE_PROBE, R.string.diagnostics_images, false));
-        items.add(getString(R.string.diagnostics_connection));
-        actions.add(this::showConnectionDiagnostics);
         items.add(getString(R.string.diagnostics_notification));
         actions.add(() -> {
             // Same path as a Teams notification, 10 s later so the app can be sent to the background first.
@@ -703,52 +707,6 @@ public final class MainActivity extends Activity {
         show(new AlertDialog.Builder(this)
                 .setTitle(R.string.diagnostics_title)
                 .setItems(items.toArray(new String[0]), (d, which) -> actions.get(which).run()));
-    }
-
-    private void showConnectionDiagnostics() {
-        android.content.pm.PackageInfo provider = WebView.getCurrentWebViewPackage();
-        String text = "app=" + appVersion()
-                + "\nandroid=" + Build.VERSION.RELEASE + " api=" + Build.VERSION.SDK_INT
-                + "\nwebView=" + (provider == null
-                        ? "unavailable" : provider.packageName + " " + provider.versionName)
-                + "\n" + networkReport()
-                + "\nlastMainFrameError=" + lastMainFrameError;
-        show(new AlertDialog.Builder(this)
-                .setTitle(R.string.diagnostics_connection)
-                .setMessage(text)
-                .setPositiveButton(R.string.diagnostics_copy, (d, w) ->
-                        getSystemService(ClipboardManager.class).setPrimaryClip(
-                                ClipData.newPlainText("Connection diagnostics", text)))
-                .setNegativeButton(R.string.diagnostics_close, null));
-    }
-
-    private void recordMainFrameError(int code, String description, String url) {
-        lastMainFrameError = "code=" + code + " description=" + description
-                + " url=" + hostAndPath(url);
-    }
-
-    private String appVersion() {
-        try {
-            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-        } catch (PackageManager.NameNotFoundException e) {
-            return "unknown";
-        }
-    }
-
-    private String networkReport() {
-        ConnectivityManager manager = getSystemService(ConnectivityManager.class);
-        NetworkCapabilities capabilities = manager.getNetworkCapabilities(manager.getActiveNetwork());
-        if (capabilities == null) {
-            return "network=unavailable";
-        }
-        List<String> transports = new ArrayList<>();
-        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) transports.add("wifi");
-        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) transports.add("cellular");
-        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) transports.add("ethernet");
-        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) transports.add("vpn");
-        return "network=" + (transports.isEmpty() ? "other" : String.join(",", transports))
-                + " internet=" + capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                + " validated=" + capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
     }
 
 

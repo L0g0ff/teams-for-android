@@ -2,7 +2,7 @@ package nl.wapnet.teamswrapper;
 
 import androidx.webkit.JavaScriptReplyProxy;
 
-/** Reports the Activity state to Teams through the origin-restricted bridge. */
+/** Reports the Activity state to Teams without letting Chromium freeze the WebView. */
 final class BackgroundVisibility {
     static final String BRIDGE = "TeamsAndroidLifecycle";
 

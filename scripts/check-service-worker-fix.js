@@ -21,6 +21,9 @@ assert(activity.includes('"teams.cloud.microsoft".equalsIgnoreCase(url.getHost()
 assert(activity.includes('"/serviceworker.js".equals(url.getPath())'));
 assert(activity.includes('WebViewFeature.DELETE_BROWSING_DATA'));
 assert(activity.includes('WebStorageCompat.deleteBrowsingDataForSite'));
+assert(activity.includes('pendingLoadUrl = initialUrl'));
+assert(activity.includes('pendingLoadUrl = link'));
+assert(activity.includes('String url = pendingLoadUrl'));
 assert(activity.includes('R.raw.noop_service_worker'));
 assert(workflow.includes('node scripts/check-service-worker-fix.js'));
 console.log('SERVICE_WORKER_FIX_OK');
